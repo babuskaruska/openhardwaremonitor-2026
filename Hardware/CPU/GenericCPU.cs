@@ -32,11 +32,7 @@ namespace OpenHardwareMonitor.Hardware.CPU {
 
     private readonly bool hasTimeStampCounter;
     private readonly bool isInvariantTimeStampCounter;
-    private readonly double estimatedTimeStampCounterFrequency;
-    private readonly double estimatedTimeStampCounterFrequencyError;
 
-    private ulong lastTimeStampCount;
-    private long lastTime;
     private double timeStampCounterFrequency;
     
 
@@ -105,19 +101,15 @@ namespace OpenHardwareMonitor.Hardware.CPU {
           ActivateSensor(totalLoad);
       }
 
-      if (hasTimeStampCounter) {
-        var previousAffinity = ThreadAffinity.Set(cpuid[0][0].Affinity);
-
-        EstimateTimeStampCounterFrequency(
-          out estimatedTimeStampCounterFrequency, 
-          out estimatedTimeStampCounterFrequencyError);  
-        
-        ThreadAffinity.Set(previousAffinity);
-      } else {
-        estimatedTimeStampCounterFrequency = 0;
+      // The processor reports its own nominal TSC frequency, so there is
+      // nothing to measure here. See CpuInstructions for why the previous
+      // RDTSC sampling loop (up to 125 ms of busy-waiting at startup, then
+      // continuous re-estimation) was removed.
+      if (!hasTimeStampCounter ||
+        !CpuInstructions.TryGetTimeStampCounterFrequency(
+          out timeStampCounterFrequency)) {
+        timeStampCounterFrequency = 0;
       }
-
-      timeStampCounterFrequency = estimatedTimeStampCounterFrequency;                  
     }
 
     private static Identifier CreateIdentifier(Vendor vendor,
@@ -131,57 +123,6 @@ namespace OpenHardwareMonitor.Hardware.CPU {
       }
       return new Identifier(s,
         processorIndex.ToString(CultureInfo.InvariantCulture));
-    }
-
-    private void EstimateTimeStampCounterFrequency(out double frequency, 
-      out double error) 
-  {     
-      double f, e;
-      
-      // preload the function
-      EstimateTimeStampCounterFrequency(0, out f, out e);
-      EstimateTimeStampCounterFrequency(0, out f, out e);
-
-      // estimate the frequency
-      error = double.MaxValue;
-      frequency = 0;
-      for (int i = 0; i < 5; i++) {
-        EstimateTimeStampCounterFrequency(0.025, out f, out e);
-        if (e < error) {
-          error = e;
-          frequency = f;
-        }
-
-        if (error < 1e-4)
-          break;
-      }                
-    }
-
-    private void EstimateTimeStampCounterFrequency(double timeWindow, 
-      out double frequency, out double error) 
-    {
-      long ticks = (long)(timeWindow * Stopwatch.Frequency);
-      ulong countBegin, countEnd;
-
-      long timeBegin = Stopwatch.GetTimestamp() +
-        (long)Math.Ceiling(0.001 * ticks);
-      long timeEnd = timeBegin + ticks;
-
-      while (Stopwatch.GetTimestamp() < timeBegin) { }
-      countBegin = Opcode.Rdtsc();
-      long afterBegin = Stopwatch.GetTimestamp();
-
-      while (Stopwatch.GetTimestamp() < timeEnd) { }
-      countEnd = Opcode.Rdtsc();
-      long afterEnd = Stopwatch.GetTimestamp();
-
-      double delta = (timeEnd - timeBegin);
-      frequency = 1e-6 * 
-        (((double)(countEnd - countBegin)) * Stopwatch.Frequency) / delta;
-
-      double beginError = (afterBegin - timeBegin) / delta;
-      double endError = (afterEnd - timeEnd) / delta;
-      error = beginError + endError;
     }
 
 
@@ -224,15 +165,8 @@ namespace OpenHardwareMonitor.Hardware.CPU {
       r.AppendLine("Time Stamp Counter: " + (hasTimeStampCounter ? (
         isInvariantTimeStampCounter ? "Invariant" : "Not Invariant") : "None"));
       r.AppendLine(string.Format(CultureInfo.InvariantCulture,
-        "Estimated Time Stamp Counter Frequency: {0} MHz",
-        Math.Round(estimatedTimeStampCounterFrequency * 100) * 0.01));
-      r.AppendLine(string.Format(CultureInfo.InvariantCulture,
-        "Estimated Time Stamp Counter Frequency Error: {0} Mhz",
-        Math.Round(estimatedTimeStampCounterFrequency *
-        estimatedTimeStampCounterFrequencyError * 1e5) * 1e-5));
-      r.AppendLine(string.Format(CultureInfo.InvariantCulture,
         "Time Stamp Counter Frequency: {0} MHz",
-        Math.Round(timeStampCounterFrequency * 100) * 0.01));   
+        Math.Round(timeStampCounterFrequency * 100) * 0.01));
       r.AppendLine();
 
       uint[] msrArray = GetMSRs();
@@ -267,38 +201,10 @@ namespace OpenHardwareMonitor.Hardware.CPU {
     }
 
     public override void Update() {
-      if (hasTimeStampCounter && isInvariantTimeStampCounter) {
-
-        // make sure always the same thread is used
-        var previousAffinity = ThreadAffinity.Set(cpuid[0][0].Affinity);
-
-        // read time before and after getting the TSC to estimate the error
-        long firstTime = Stopwatch.GetTimestamp();
-        ulong timeStampCount = Opcode.Rdtsc();
-        long time = Stopwatch.GetTimestamp();
-
-        // restore the previous thread affinity mask
-        ThreadAffinity.Set(previousAffinity);
-
-        double delta = ((double)(time - lastTime)) / Stopwatch.Frequency;
-        double error = ((double)(time - firstTime)) / Stopwatch.Frequency;
-
-        // only use data if they are measured accuarte enough (max 0.1ms delay)
-        if (error < 0.0001) {
-
-          // ignore the first reading because there are no initial values 
-          // ignore readings with too large or too small time window
-          if (lastTime != 0 && delta > 0.5 && delta < 2) {
-
-            // update the TSC frequency with the new value
-            timeStampCounterFrequency =
-              (timeStampCount - lastTimeStampCount) / (1e6 * delta);
-          }
-
-          lastTimeStampCount = timeStampCount;
-          lastTime = time;
-        }        
-      }
+      // The TSC frequency is nominal and constant on any processor with an
+      // invariant TSC, and is read once in the constructor. It used to be
+      // re-estimated on every tick by sampling RDTSC against Stopwatch, which
+      // pinned thread affinity and measured a constant with added noise.
 
       if (cpuLoad.IsAvailable) {
         cpuLoad.Update();

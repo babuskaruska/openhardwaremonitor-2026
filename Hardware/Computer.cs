@@ -80,7 +80,6 @@ namespace OpenHardwareMonitor.Hardware {
       this.smbios = new SMBIOS();
 
       Ring0.Open();
-      Opcode.Open();
 
       AddGroups();
 
@@ -357,7 +356,6 @@ namespace OpenHardwareMonitor.Hardware {
 
       RemoveGroups();
 
-      Opcode.Close();
       Ring0.Close();
 
       this.smbios = null;

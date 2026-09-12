@@ -97,7 +97,7 @@ namespace OpenHardwareMonitor.Hardware.CPU {
 
       uint eax, ebx, ecx, edx;
 
-      Opcode.Cpuid(CPUID_0, 0, out eax, out ebx, out ecx, out edx);
+      CpuInstructions.Cpuid(CPUID_0, 0, out eax, out ebx, out ecx, out edx);
       if (eax > 0)
         maxCpuid = eax;
       else
@@ -120,7 +120,7 @@ namespace OpenHardwareMonitor.Hardware.CPU {
           break;
       }
       eax = ebx = ecx = edx = 0;
-      Opcode.Cpuid(CPUID_EXT, 0, out eax, out ebx, out ecx, out edx);
+      CpuInstructions.Cpuid(CPUID_EXT, 0, out eax, out ebx, out ecx, out edx);
       if (eax > CPUID_EXT)
         maxCpuidExt = eax - CPUID_EXT;
       else
@@ -131,19 +131,19 @@ namespace OpenHardwareMonitor.Hardware.CPU {
 
       cpuidData = new uint[maxCpuid + 1, 4];
       for (uint i = 0; i < (maxCpuid + 1); i++)
-        Opcode.Cpuid(CPUID_0 + i, 0,
+        CpuInstructions.Cpuid(CPUID_0 + i, 0,
           out cpuidData[i, 0], out cpuidData[i, 1],
           out cpuidData[i, 2], out cpuidData[i, 3]);
 
       cpuidExtData = new uint[maxCpuidExt + 1, 4];
       for (uint i = 0; i < (maxCpuidExt + 1); i++)
-        Opcode.Cpuid(CPUID_EXT + i, 0,
+        CpuInstructions.Cpuid(CPUID_EXT + i, 0,
           out cpuidExtData[i, 0], out cpuidExtData[i, 1],
           out cpuidExtData[i, 2], out cpuidExtData[i, 3]);
 
       StringBuilder nameBuilder = new StringBuilder();
       for (uint i = 2; i <= 4; i++) {
-        Opcode.Cpuid(CPUID_EXT + i, 0, out eax, out ebx, out ecx, out edx);
+        CpuInstructions.Cpuid(CPUID_EXT + i, 0, out eax, out ebx, out ecx, out edx);
         AppendRegister(nameBuilder, eax);
         AppendRegister(nameBuilder, ebx);
         AppendRegister(nameBuilder, ecx);

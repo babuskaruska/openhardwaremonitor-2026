@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Headless verification harness.
+
+    Exists so the sensor engine can be exercised and proven on real hardware
+    without going through the GUI, which is useful both while porting and for
+    reporting bugs: "run SensorDump and paste the output".
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>SensorDump</AssemblyName>
+    <RootNamespace>OpenHardwareMonitor.Tools.SensorDump</RootNamespace>
+    <AssemblyTitle>Open Hardware Monitor Sensor Dump</AssemblyTitle>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\OpenHardwareMonitorLib.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -32,10 +32,5 @@
     <PackageReference Include="System.IO.Ports" Version="10.0.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- TODO(Phase 2): both of these are removed when WinRing0 is dropped. -->
-    <EmbeddedResource Include="Hardware\WinRing0.sys" />
-    <EmbeddedResource Include="Hardware\WinRing0x64.sys" />
-  </ItemGroup>
 
 </Project>
