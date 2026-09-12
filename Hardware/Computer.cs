@@ -12,7 +12,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Security.Permissions;
 using System.Reflection;
 
 namespace OpenHardwareMonitor.Hardware {
@@ -74,7 +73,6 @@ namespace OpenHardwareMonitor.Hardware {
         Remove(group);
     }
 
-    [SecurityPermission(SecurityAction.LinkDemand, UnmanagedCode = true)]
     public void Open() {
       if (open)
         return;
@@ -124,7 +122,6 @@ namespace OpenHardwareMonitor.Hardware {
     public bool MainboardEnabled {
       get { return mainboardEnabled; }
 
-      [SecurityPermission(SecurityAction.LinkDemand, UnmanagedCode = true)]
       set {
         if (open && value != mainboardEnabled) {
           if (value)
@@ -139,7 +136,6 @@ namespace OpenHardwareMonitor.Hardware {
     public bool CPUEnabled {
       get { return cpuEnabled; }
 
-      [SecurityPermission(SecurityAction.LinkDemand, UnmanagedCode = true)]
       set {
         if (open && value != cpuEnabled) {
           if (value)
@@ -154,7 +150,6 @@ namespace OpenHardwareMonitor.Hardware {
     public bool RAMEnabled {
       get { return ramEnabled; }
 
-      [SecurityPermission(SecurityAction.LinkDemand, UnmanagedCode = true)]
       set {
         if (open && value != ramEnabled) {
           if (value)
@@ -169,7 +164,6 @@ namespace OpenHardwareMonitor.Hardware {
     public bool GPUEnabled {
       get { return gpuEnabled; }
 
-      [SecurityPermission(SecurityAction.LinkDemand, UnmanagedCode = true)]
       set {
         if (open && value != gpuEnabled) {
           if (value) {
@@ -187,7 +181,6 @@ namespace OpenHardwareMonitor.Hardware {
     public bool FanControllerEnabled {
       get { return fanControllerEnabled; }
 
-      [SecurityPermission(SecurityAction.LinkDemand, UnmanagedCode = true)]
       set {
         if (open && value != fanControllerEnabled) {
           if (value) {
@@ -205,7 +198,6 @@ namespace OpenHardwareMonitor.Hardware {
     public bool HDDEnabled {
       get { return hddEnabled; }
 
-      [SecurityPermission(SecurityAction.LinkDemand, UnmanagedCode = true)]
       set {
         if (open && value != hddEnabled) {
           if (value)
