@@ -20,8 +20,7 @@ namespace OpenHardwareMonitor.Hardware.HDD {
 
     private const int MAX_DRIVES = 32;
 
-    private readonly List<AbstractHarddrive> hardware = 
-      new List<AbstractHarddrive>();
+    private readonly List<Hardware> hardware = new List<Hardware>();
 
     public HarddriveGroup(ISettings settings) {
       if (OperatingSystem.IsUnix) 
@@ -30,6 +29,16 @@ namespace OpenHardwareMonitor.Hardware.HDD {
       ISmart smart = new WindowsSmart();
 
       for (int drive = 0; drive < MAX_DRIVES; drive++) {
+        // NVMe is tried first. These drives cannot answer the ATA SMART
+        // commands the legacy path issues, so without this they degraded to
+        // a "Generic Hard Disk" with only a used-space bar - or vanished
+        // entirely when they had no mounted volume.
+        NVMeDrive nvme = NVMeDrive.CreateInstance(smart, drive, settings);
+        if (nvme != null) {
+          this.hardware.Add(nvme);
+          continue;
+        }
+
         AbstractHarddrive instance =
           AbstractHarddrive.CreateInstance(smart, drive, settings);
         if (instance != null) {
@@ -49,7 +58,7 @@ namespace OpenHardwareMonitor.Hardware.HDD {
     }
 
     public void Close() {
-      foreach (AbstractHarddrive hdd in hardware) 
+      foreach (Hardware hdd in hardware)
         hdd.Close();
     }
   }
