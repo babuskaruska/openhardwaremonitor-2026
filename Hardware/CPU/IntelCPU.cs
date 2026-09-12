@@ -35,7 +35,21 @@ namespace OpenHardwareMonitor.Hardware.CPU {
       IceLake,
       CometLake,
       Tremont,
-      TigerLake
+      TigerLake,
+      RocketLake,
+      AlderLake,
+      RaptorLake,
+      MeteorLake,
+      ArrowLake,
+      LunarLake,
+      PantherLake,
+      NovaLake,
+      SapphireRapids,
+      EmeraldRapids,
+      GraniteRapids,
+      Crestmont,
+      Darkmont,
+      DiamondRapids
     }
 
     private readonly Sensor[] coreTemperatures;
@@ -88,212 +102,193 @@ namespace OpenHardwareMonitor.Hardware.CPU {
       return result;
     }
 
+    /// <summary>
+    /// Maps CPUID family/model to a microarchitecture.
+    ///
+    /// Model numbers follow the canonical list in the Linux kernel's
+    /// arch/x86/include/asm/intel-family.h. Note that family 0x06 is no
+    /// longer a safe assumption: Nova Lake is family 18 and Diamond Rapids
+    /// is family 19, the first Intel parts to leave family 6 since the
+    /// Pentium 4.
+    /// </summary>
+    private static Microarchitecture GetMicroarchitecture(uint family,
+      uint model) {
+
+      switch (family) {
+        case 0x06:
+          switch (model) {
+            case 0x0F: case 0x17: return Microarchitecture.Core;
+            case 0x1C: case 0x26: case 0x36: return Microarchitecture.Atom;
+            case 0x1A: case 0x1E: case 0x1F: case 0x25: case 0x2C:
+            case 0x2E: case 0x2F: return Microarchitecture.Nehalem;
+            case 0x2A: case 0x2D: return Microarchitecture.SandyBridge;
+            case 0x3A: case 0x3E: return Microarchitecture.IvyBridge;
+            case 0x3C: case 0x3F: case 0x45: case 0x46:
+              return Microarchitecture.Haswell;
+            case 0x3D: case 0x47: case 0x4F: case 0x56:
+              return Microarchitecture.Broadwell;
+            case 0x37: case 0x4A: case 0x4D: case 0x5A: case 0x5D:
+              return Microarchitecture.Silvermont;
+            case 0x4C: return Microarchitecture.Airmont;
+            case 0x4E: case 0x5E: case 0x55:
+              return Microarchitecture.Skylake;
+            case 0x8E: case 0x9E: return Microarchitecture.KabyLake;
+            case 0x5C: case 0x5F: return Microarchitecture.Goldmont;
+            case 0x7A: return Microarchitecture.GoldmontPlus;
+            case 0x66: return Microarchitecture.CannonLake;
+            case 0x6A: case 0x6C: case 0x7D: case 0x7E:
+              return Microarchitecture.IceLake;
+            case 0xA5: case 0xA6: return Microarchitecture.CometLake;
+            case 0x86: case 0x96: case 0x9C:
+              return Microarchitecture.Tremont;
+            case 0x8C: case 0x8D: return Microarchitecture.TigerLake;
+            case 0xA7: return Microarchitecture.RocketLake;
+
+            // --- everything below here was previously unrecognised ---
+            case 0x97: case 0x9A: case 0xBE:
+              return Microarchitecture.AlderLake;
+            case 0xB7: case 0xBA: case 0xBF:
+              return Microarchitecture.RaptorLake;
+            case 0xAA: case 0xAC: return Microarchitecture.MeteorLake;
+            case 0xB5: case 0xC5: case 0xC6:
+              return Microarchitecture.ArrowLake;
+            case 0xBD: return Microarchitecture.LunarLake;
+            case 0xCC: case 0xE5: return Microarchitecture.PantherLake;
+            case 0x8F: return Microarchitecture.SapphireRapids;
+            case 0xCF: return Microarchitecture.EmeraldRapids;
+            case 0xAD: case 0xAE: return Microarchitecture.GraniteRapids;
+            case 0xAF: case 0xB6: return Microarchitecture.Crestmont;
+            case 0xDD: return Microarchitecture.Darkmont;
+            default: return Microarchitecture.Unknown;
+          }
+        case 0x0F:
+          switch (model) {
+            case 0x00: case 0x01: case 0x02: case 0x03:
+            case 0x04: case 0x06: return Microarchitecture.NetBurst;
+            default: return Microarchitecture.Unknown;
+          }
+        case 0x12:                                  // Nova Lake
+          return Microarchitecture.NovaLake;
+        case 0x13:                                  // Diamond Rapids
+          return Microarchitecture.DiamondRapids;
+        default:
+          return Microarchitecture.Unknown;
+      }
+    }
+
+    /// <summary>
+    /// Junction temperature, per core.
+    ///
+    /// Anything Nehalem or newer reports TjMax through
+    /// MSR_TEMPERATURE_TARGET, so it is read rather than tabulated. Without a
+    /// low-level backend that read fails and 100 °C is assumed, which happens
+    /// to be correct for most modern desktop parts. Only the pre-Nehalem
+    /// processors, which predate the MSR, need hard-coded values.
+    /// </summary>
+    private float[] GetTjMax(Microarchitecture microarchitecture, uint family,
+      uint model, uint stepping) {
+
+      switch (microarchitecture) {
+        case Microarchitecture.Core:
+          if (model == 0x0F) {
+            switch (stepping) {
+              case 0x06: return Floats(85 + 2);
+              case 0x0B: return Floats(80 + 9);
+              case 0x0D: return Floats(85);
+              default: return Floats(85);
+            }
+          }
+          return Floats(100);
+
+        case Microarchitecture.Atom:
+          if (model == 0x1C) {
+            switch (stepping) {
+              case 0x02: return Floats(90);
+              case 0x0A: return Floats(100);
+              default: return Floats(90);
+            }
+          }
+          return GetTjMaxFromMSR();
+
+        case Microarchitecture.NetBurst:
+        case Microarchitecture.Unknown:
+          return Floats(100);
+
+        default:
+          return GetTjMaxFromMSR();
+      }
+    }
+
+    /// <summary>
+    /// True for microarchitectures that report the maximum non-turbo ratio in
+    /// MSR_PLATFORM_INFO, which is everything from Nehalem onward. Expressed
+    /// as an exclusion list so that newly added architectures are handled
+    /// correctly by default rather than silently losing their clock sensors.
+    /// </summary>
+    private static bool UsesPlatformInfoMultiplier(
+      Microarchitecture microarchitecture) {
+
+      switch (microarchitecture) {
+        case Microarchitecture.Unknown:
+        case Microarchitecture.NetBurst:
+        case Microarchitecture.Atom:
+        case Microarchitecture.Core:
+          return false;
+        default:
+          return true;
+      }
+    }
+
+    /// <summary>
+    /// True for microarchitectures with the RAPL energy counters, introduced
+    /// with Sandy Bridge. Also an exclusion list, for the same reason.
+    /// </summary>
+    private static bool SupportsRapl(Microarchitecture microarchitecture) {
+      switch (microarchitecture) {
+        case Microarchitecture.Unknown:
+        case Microarchitecture.NetBurst:
+        case Microarchitecture.Core:
+        case Microarchitecture.Atom:
+        case Microarchitecture.Nehalem:
+          return false;
+        default:
+          return true;
+      }
+    }
+
     public IntelCPU(int processorIndex, CPUID[][] cpuid, ISettings settings)
       : base(processorIndex, cpuid, settings) {
       // set tjMax
-      float[] tjMax;
-      switch (family) {
-        case 0x06: {
-            switch (model) {
-              case 0x0F: // Intel Core 2 (65nm)
-                microarchitecture = Microarchitecture.Core;
-                switch (stepping) {
-                  case 0x06: // B2
-                    switch (coreCount) {
-                      case 2:
-                        tjMax = Floats(80 + 10); break;
-                      case 4:
-                        tjMax = Floats(90 + 10); break;
-                      default:
-                        tjMax = Floats(85 + 10); break;
-                    }
-                    tjMax = Floats(80 + 10); break;
-                  case 0x0B: // G0
-                    tjMax = Floats(90 + 10); break;
-                  case 0x0D: // M0
-                    tjMax = Floats(85 + 10); break;
-                  default:
-                    tjMax = Floats(85 + 10); break;
-                } break;
-              case 0x17: // Intel Core 2 (45nm)
-                microarchitecture = Microarchitecture.Core;
-                tjMax = Floats(100); break;
-              case 0x1C: // Intel Atom (45nm)
-                microarchitecture = Microarchitecture.Atom;
-                switch (stepping) {
-                  case 0x02: // C0
-                    tjMax = Floats(90); break;
-                  case 0x0A: // A0, B0
-                    tjMax = Floats(100); break;
-                  default:
-                    tjMax = Floats(90); break;
-                } break;
-              case 0x1A: // Intel Core i7 LGA1366 (45nm)
-              case 0x1E: // Intel Core i5, i7 LGA1156 (45nm)
-              case 0x1F: // Intel Core i5, i7 
-              case 0x25: // Intel Core i3, i5, i7 LGA1156 (32nm)
-              case 0x2C: // Intel Core i7 LGA1366 (32nm) 6 Core
-              case 0x2E: // Intel Xeon Processor 7500 series (45nm)
-              case 0x2F: // Intel Xeon Processor (32nm)
-                microarchitecture = Microarchitecture.Nehalem;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x2A: // Intel Core i5, i7 2xxx LGA1155 (32nm)
-              case 0x2D: // Next Generation Intel Xeon, i7 3xxx LGA2011 (32nm)
-                microarchitecture = Microarchitecture.SandyBridge;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x3A: // Intel Core i5, i7 3xxx LGA1155 (22nm)
-              case 0x3E: // Intel Core i7 4xxx LGA2011 (22nm)
-                microarchitecture = Microarchitecture.IvyBridge;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x3C: // Intel Core i5, i7 4xxx LGA1150 (22nm)              
-              case 0x3F: // Intel Xeon E5-2600/1600 v3, Core i7-59xx
-                         // LGA2011-v3, Haswell-E (22nm)
-              case 0x45: // Intel Core i5, i7 4xxxU (22nm)
-              case 0x46: 
-                microarchitecture = Microarchitecture.Haswell;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x3D: // Intel Core M-5xxx (14nm)
-              case 0x47: // Intel i5, i7 5xxx, Xeon E3-1200 v4 (14nm)
-              case 0x4F: // Intel Xeon E5-26xx v4
-              case 0x56: // Intel Xeon D-15xx
-                microarchitecture = Microarchitecture.Broadwell;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x36: // Intel Atom S1xxx, D2xxx, N2xxx (32nm)
-                microarchitecture = Microarchitecture.Atom;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x37: // Intel Atom E3xxx, Z3xxx (22nm)
-              case 0x4A:
-              case 0x4D: // Intel Atom C2xxx (22nm)
-              case 0x5A:
-              case 0x5D:
-                microarchitecture = Microarchitecture.Silvermont;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x4E:
-              case 0x5E: // Intel Core i5, i7 6xxxx LGA1151 (14nm)
-              case 0x55: // Intel Core i7, i9 7xxxx LGA2066 (14nm)
-                microarchitecture = Microarchitecture.Skylake;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x4C:
-                microarchitecture = Microarchitecture.Airmont;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x8E: 
-              case 0x9E: // Intel Core i5, i7 7xxxx (14nm)
-                microarchitecture = Microarchitecture.KabyLake;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x5C: // Intel Atom processors (Apollo Lake) (14nm)
-              case 0x5F: // Intel Atom processors (Denverton) (14nm)
-                microarchitecture = Microarchitecture.Goldmont;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x7A: // Intel Atom processors (14nm)
-                microarchitecture = Microarchitecture.GoldmontPlus;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x66: // Intel Core i3 8121U (10nm)
-                microarchitecture = Microarchitecture.CannonLake;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x7D: // Intel Core i3, i5, i7 10xxGx (10nm) 
-              case 0x7E: 
-              case 0x6A: // Intel Xeon (10nm)
-              case 0x6C:
-                microarchitecture = Microarchitecture.IceLake;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0xA5:
-              case 0xA6: // Intel Core i3, i5, i7 10xxxU (14nm)
-                microarchitecture = Microarchitecture.CometLake;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x86: // Intel Atom processors
-                microarchitecture = Microarchitecture.Tremont;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              case 0x8C: // Intel processors (10nm++)
-              case 0x8D:
-                microarchitecture = Microarchitecture.TigerLake;
-                tjMax = GetTjMaxFromMSR();
-                break;
-              default:
-                microarchitecture = Microarchitecture.Unknown;
-                tjMax = Floats(100);
-                break;
-            }
-          } break;
-        case 0x0F: {
-            switch (model) {
-              case 0x00: // Pentium 4 (180nm)
-              case 0x01: // Pentium 4 (130nm)
-              case 0x02: // Pentium 4 (130nm)
-              case 0x03: // Pentium 4, Celeron D (90nm)
-              case 0x04: // Pentium 4, Pentium D, Celeron D (90nm)
-              case 0x06: // Pentium 4, Pentium D, Celeron D (65nm)
-                microarchitecture = Microarchitecture.NetBurst;
-                tjMax = Floats(100);
-                break;
-              default:
-                microarchitecture = Microarchitecture.Unknown;
-                tjMax = Floats(100);
-                break;
-            }
-          } break;
-        default:
-          microarchitecture = Microarchitecture.Unknown;
-          tjMax = Floats(100);
-          break;
-      }
+      //
+      // This used to be a three-level switch on family/model/stepping that
+      // assigned microarchitecture and TjMax together. It stopped at Tiger
+      // Lake, so every processor released after 2020 fell through to
+      // Unknown - which disables core temperature, package temperature AND
+      // core clocks further down. A Raptor Lake part reported nothing at all.
+      microarchitecture = GetMicroarchitecture(family, model);
+      float[] tjMax = GetTjMax(microarchitecture, family, model, stepping);
+
 
       // set timeStampCounterMultiplier
-      switch (microarchitecture) {
-        case Microarchitecture.NetBurst:
-        case Microarchitecture.Atom:
-        case Microarchitecture.Core: {
-            uint eax, edx;
-            if (Ring0.Rdmsr(IA32_PERF_STATUS, out eax, out edx)) {
-              timeStampCounterMultiplier =
-                ((edx >> 8) & 0x1f) + 0.5 * ((edx >> 14) & 1);
-            }
-          } break;
-        case Microarchitecture.Nehalem:
-        case Microarchitecture.SandyBridge:
-        case Microarchitecture.IvyBridge:
-        case Microarchitecture.Haswell: 
-        case Microarchitecture.Broadwell:
-        case Microarchitecture.Silvermont:
-        case Microarchitecture.Skylake:
-        case Microarchitecture.Airmont:
-        case Microarchitecture.KabyLake:
-        case Microarchitecture.Goldmont:
-        case Microarchitecture.GoldmontPlus:
-        case Microarchitecture.CannonLake:
-        case Microarchitecture.IceLake:
-        case Microarchitecture.CometLake:
-        case Microarchitecture.Tremont:
-        case Microarchitecture.TigerLake: {
-            uint eax, edx;
-            if (Ring0.Rdmsr(MSR_PLATFORM_INFO, out eax, out edx)) {
-              timeStampCounterMultiplier = (eax >> 8) & 0xff;
-            }
-          } break;
-        default: 
-          timeStampCounterMultiplier = 0;
-          break;
+      if (UsesPlatformInfoMultiplier(microarchitecture)) {
+        uint eax, edx;
+        if (Ring0.Rdmsr(MSR_PLATFORM_INFO, out eax, out edx))
+          timeStampCounterMultiplier = (eax >> 8) & 0xff;
+      } else if (microarchitecture != Microarchitecture.Unknown) {
+        uint eax, edx;
+        if (Ring0.Rdmsr(IA32_PERF_STATUS, out eax, out edx)) {
+          timeStampCounterMultiplier =
+            ((edx >> 8) & 0x1f) + 0.5 * ((edx >> 14) & 1);
+        }
+      } else {
+        timeStampCounterMultiplier = 0;
       }
 
       // check if processor supports a digital thermal sensor at core level
-      if (cpuid[0][0].Data.GetLength(0) > 6 &&
-        (cpuid[0][0].Data[6, 0] & 1) != 0 && 
-        microarchitecture != Microarchitecture.Unknown) 
+      if (Ring0.SupportsMsr &&
+        cpuid[0][0].Data.GetLength(0) > 6 &&
+        (cpuid[0][0].Data[6, 0] & 1) != 0 &&
+        microarchitecture != Microarchitecture.Unknown)
       {
         coreTemperatures = new Sensor[coreCount];
         for (int i = 0; i < coreTemperatures.Length; i++) {
@@ -312,9 +307,10 @@ namespace OpenHardwareMonitor.Hardware.CPU {
       }
 
       // check if processor supports a digital thermal sensor at package level
-      if (cpuid[0][0].Data.GetLength(0) > 6 &&
-        (cpuid[0][0].Data[6, 0] & 0x40) != 0 && 
-        microarchitecture != Microarchitecture.Unknown) 
+      if (Ring0.SupportsMsr &&
+        cpuid[0][0].Data.GetLength(0) > 6 &&
+        (cpuid[0][0].Data[6, 0] & 0x40) != 0 &&
+        microarchitecture != Microarchitecture.Unknown)
       {
         packageTemperature = new Sensor("CPU Package",
           coreTemperatures.Length, SensorType.Temperature, this, new[] { 
@@ -336,22 +332,7 @@ namespace OpenHardwareMonitor.Hardware.CPU {
           ActivateSensor(coreClocks[i]);
       }
 
-      if (microarchitecture == Microarchitecture.SandyBridge ||
-          microarchitecture == Microarchitecture.IvyBridge ||
-          microarchitecture == Microarchitecture.Haswell ||
-          microarchitecture == Microarchitecture.Broadwell || 
-          microarchitecture == Microarchitecture.Skylake ||
-          microarchitecture == Microarchitecture.Silvermont ||
-          microarchitecture == Microarchitecture.Airmont ||
-          microarchitecture == Microarchitecture.KabyLake || 
-          microarchitecture == Microarchitecture.Goldmont ||
-          microarchitecture == Microarchitecture.GoldmontPlus ||
-          microarchitecture == Microarchitecture.CannonLake ||
-          microarchitecture == Microarchitecture.IceLake ||
-          microarchitecture == Microarchitecture.CometLake ||
-          microarchitecture == Microarchitecture.Tremont ||
-          microarchitecture == Microarchitecture.TigerLake) 
-      {
+      if (Ring0.SupportsMsr && SupportsRapl(microarchitecture)) {
         powerSensors = new Sensor[energyStatusMSRs.Length];
         lastEnergyTime = new DateTime[energyStatusMSRs.Length];
         lastEnergyConsumed = new uint[energyStatusMSRs.Length];
@@ -448,7 +429,13 @@ namespace OpenHardwareMonitor.Hardware.CPU {
         }
       }
 
-      if (HasTimeStampCounter && timeStampCounterMultiplier > 0) {
+      // The MSR path needs a low-level backend. Without one,
+      // timeStampCounterMultiplier stays zero and there is nothing to scale,
+      // so fall back to the operating system's per-core clock accounting
+      // rather than reporting no clocks at all.
+      if (!HasTimeStampCounter || timeStampCounterMultiplier <= 0) {
+        TryUpdateClocksFromOperatingSystem(coreClocks);
+      } else {
         double newBusClock = 0;
         uint eax, edx;
         for (int i = 0; i < coreClocks.Length; i++) {
@@ -458,33 +445,21 @@ namespace OpenHardwareMonitor.Hardware.CPU {
           {
             newBusClock =
               TimeStampCounterFrequency / timeStampCounterMultiplier;
-            switch (microarchitecture) {
-              case Microarchitecture.Nehalem: {
-                  uint multiplier = eax & 0xff;
-                  coreClocks[i].Value = (float)(multiplier * newBusClock);
-                } break;
-              case Microarchitecture.SandyBridge:
-              case Microarchitecture.IvyBridge:
-              case Microarchitecture.Haswell: 
-              case Microarchitecture.Broadwell:
-              case Microarchitecture.Silvermont:
-              case Microarchitecture.Skylake:
-              case Microarchitecture.KabyLake: 
-              case Microarchitecture.Goldmont:
-              case Microarchitecture.GoldmontPlus:
-              case Microarchitecture.CannonLake:
-              case Microarchitecture.IceLake:
-              case Microarchitecture.CometLake:
-              case Microarchitecture.Tremont:
-              case Microarchitecture.TigerLake: {
-                  uint multiplier = (eax >> 8) & 0xff;
-                  coreClocks[i].Value = (float)(multiplier * newBusClock);
-                } break;
-              default: {
-                  double multiplier =
-                    ((eax >> 8) & 0x1f) + 0.5 * ((eax >> 14) & 1);
-                  coreClocks[i].Value = (float)(multiplier * newBusClock);
-                } break;
+            // Expressed as a chain rather than an explicit architecture
+            // list so that a newly recognised architecture decodes with the
+            // modern layout by default. The old list-based switch sent
+            // anything unlisted to the Core-era decode, which is wrong.
+            if (microarchitecture == Microarchitecture.Nehalem) {
+              uint multiplier = eax & 0xff;
+              coreClocks[i].Value = (float)(multiplier * newBusClock);
+            } else if (UsesPlatformInfoMultiplier(microarchitecture)) {
+              // Sandy Bridge and everything since.
+              uint multiplier = (eax >> 8) & 0xff;
+              coreClocks[i].Value = (float)(multiplier * newBusClock);
+            } else {
+              double multiplier =
+                ((eax >> 8) & 0x1f) + 0.5 * ((eax >> 14) & 1);
+              coreClocks[i].Value = (float)(multiplier * newBusClock);
             }
           } else {
             // if IA32_PERF_STATUS is not available, assume TSC frequency

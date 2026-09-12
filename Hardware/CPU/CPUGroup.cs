@@ -111,8 +111,9 @@ namespace OpenHardwareMonitor.Hardware.CPU {
               case 0x16:
                 hardware.Add(new AMD10CPU(index, coreThreads, settings));
                 break;
-              case 0x17:
-              case 0x19:
+              case 0x17:               // Zen, Zen+, Zen 2
+              case 0x19:               // Zen 3, Zen 4
+              case 0x1A:               // Zen 5 (Granite Ridge, Strix Point)
                 hardware.Add(new AMD17CPU(index, coreThreads, settings));
                 break;
               default:

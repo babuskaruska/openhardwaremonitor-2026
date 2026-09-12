@@ -34,6 +34,7 @@ namespace OpenHardwareMonitor.Hardware.CPU {
     private readonly bool isInvariantTimeStampCounter;
 
     private double timeStampCounterFrequency;
+    private ProcessorFrequency processorFrequency;
     
 
     private readonly Vendor vendor;
@@ -42,11 +43,54 @@ namespace OpenHardwareMonitor.Hardware.CPU {
     private readonly Sensor totalLoad;
     private readonly Sensor[] coreLoads;
 
+    private readonly string[] coreLabels;
+
     protected string CoreString(int i) {
       if (coreCount == 1)
         return "CPU Core";
-      else
-        return "CPU Core #" + (i + 1);
+      if (coreLabels != null && i >= 0 && i < coreLabels.Length)
+        return coreLabels[i];
+      return "CPU Core #" + (i + 1);
+    }
+
+    /// <summary>
+    /// Builds per-core sensor labels. On a heterogeneous processor the cores
+    /// are named by class and numbered within that class, so an i7-14700KF
+    /// reads "P-Core #1".."P-Core #8" and "E-Core #1".."E-Core #12" rather
+    /// than one undifferentiated run of twenty. On a homogeneous processor
+    /// the traditional naming is kept.
+    /// </summary>
+    private static string[] BuildCoreLabels(CPUID[][] cpuid) {
+      string[] labels = new string[cpuid.Length];
+
+      bool hasPerformance = false;
+      bool hasEfficiency = false;
+      foreach (CPUID[] core in cpuid) {
+        if (core.Length == 0)
+          continue;
+        if (core[0].CoreType == CoreType.Performance)
+          hasPerformance = true;
+        else if (core[0].CoreType == CoreType.Efficiency)
+          hasEfficiency = true;
+      }
+
+      bool hybrid = hasPerformance && hasEfficiency;
+
+      int performanceIndex = 0;
+      int efficiencyIndex = 0;
+      for (int i = 0; i < cpuid.Length; i++) {
+        CoreType type = cpuid[i].Length > 0
+          ? cpuid[i][0].CoreType : CoreType.Unknown;
+
+        if (hybrid && type == CoreType.Performance)
+          labels[i] = "P-Core #" + (++performanceIndex);
+        else if (hybrid && type == CoreType.Efficiency)
+          labels[i] = "E-Core #" + (++efficiencyIndex);
+        else
+          labels[i] = "CPU Core #" + (i + 1);
+      }
+
+      return labels;
     }
 
     public GenericCPU(int processorIndex, CPUID[][] cpuid, ISettings settings)
@@ -62,7 +106,8 @@ namespace OpenHardwareMonitor.Hardware.CPU {
       this.stepping = cpuid[0][0].Stepping;
 
       this.processorIndex = processorIndex;
-      this.coreCount = cpuid.Length;  
+      this.coreCount = cpuid.Length;
+      this.coreLabels = BuildCoreLabels(cpuid);
   
       // check if processor has MSRs
       if (cpuid[0][0].Data.GetLength(0) > 1
@@ -143,6 +188,37 @@ namespace OpenHardwareMonitor.Hardware.CPU {
 
     protected virtual uint[] GetMSRs() {
       return null;
+    }
+
+    /// <summary>
+    /// Fills per-core clock sensors from the operating system's power
+    /// management data, for use when no low-level backend is available to
+    /// read IA32_PERF_STATUS. Less precise than the MSR path, but it needs no
+    /// driver, which is the difference between reporting clocks and reporting
+    /// nothing.
+    /// </summary>
+    protected bool TryUpdateClocksFromOperatingSystem(Sensor[] coreClocks) {
+      if (coreClocks == null)
+        return false;
+
+      processorFrequency ??= new ProcessorFrequency(cpuid);
+      if (!processorFrequency.IsAvailable)
+        return false;
+
+      bool any = false;
+      for (int i = 0; i < coreClocks.Length && i < cpuid.Length; i++) {
+        float? megahertz = processorFrequency.GetCoreFrequency(i);
+        coreClocks[i].Value = megahertz;
+        if (megahertz.HasValue)
+          any = true;
+      }
+      return any;
+    }
+
+    public override void Close() {
+      processorFrequency?.Dispose();
+      processorFrequency = null;
+      base.Close();
     }
 
     public override string GetReport() {

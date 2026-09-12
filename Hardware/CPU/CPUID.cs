@@ -19,6 +19,22 @@ namespace OpenHardwareMonitor.Hardware.CPU {
     AMD,
   }
 
+  /// <summary>
+  /// Physical class of a core on a heterogeneous ("hybrid") processor.
+  /// Reported by CPUID leaf 0x1A, present since Alder Lake.
+  /// </summary>
+  internal enum CoreType {
+
+    /// <summary>Homogeneous processor, or the class could not be read.</summary>
+    Unknown,
+
+    /// <summary>P-core. Intel calls this the Core / "big" type (0x40).</summary>
+    Performance,
+
+    /// <summary>E-core. Intel calls this the Atom / "small" type (0x20).</summary>
+    Efficiency
+  }
+
   internal class CPUID {
 
     private readonly int group;
@@ -45,6 +61,8 @@ namespace OpenHardwareMonitor.Hardware.CPU {
     private readonly uint processorId;
     private readonly uint coreId;
     private readonly uint threadId;
+
+    private readonly CoreType coreType = CoreType.Unknown;
 
     public const uint CPUID_0 = 0;
     public const uint CPUID_EXT = 0x80000000;
@@ -241,12 +259,104 @@ namespace OpenHardwareMonitor.Hardware.CPU {
           break;
       }
 
-      processorId = (apicId >> (int)(coreMaskWith + threadMaskWith));
-      coreId = ((apicId >> (int)(threadMaskWith))
-        - (processorId << (int)(coreMaskWith)));
-      threadId = apicId
-        - (processorId << (int)(coreMaskWith + threadMaskWith))
-        - (coreId << (int)(threadMaskWith));
+      // Heterogeneous processors report the class of the core this thread is
+      // running on through leaf 0x1A. Read it before topology so that it is
+      // available even when the extended topology leaves are absent.
+      if (maxCpuid >= 0x1A) {
+        CpuInstructions.Cpuid(0x1A, 0, out uint coreTypeEax, out _, out _,
+          out _);
+        switch ((coreTypeEax >> 24) & 0xFF) {
+          case 0x40: coreType = CoreType.Performance; break;
+          case 0x20: coreType = CoreType.Efficiency; break;
+        }
+      }
+
+      // Prefer the extended topology leaves. They give the shift widths
+      // directly from the hardware, which is the only way to get this right
+      // on a hybrid processor.
+      //
+      // The legacy path below derives the SMT width by dividing logical
+      // processors per package by cores per package and rounding up to a
+      // power of two. That assumes every core has the same number of threads.
+      // Since Alder Lake that is false - P-cores are SMT-2 while E-cores are
+      // SMT-1 - so the computed width is wrong and distinct cores collapse
+      // onto the same coreId.
+      if (TryGetExtendedTopology(maxCpuid, out uint x2ApicId,
+        out uint smtShift, out uint coreShift)) {
+
+        apicId = x2ApicId;
+        threadMaskWith = smtShift;
+        coreMaskWith = coreShift - smtShift;
+
+        threadId = x2ApicId & ((1u << (int)smtShift) - 1);
+        coreId = (x2ApicId >> (int)smtShift) &
+          ((1u << (int)(coreShift - smtShift)) - 1);
+        processorId = x2ApicId >> (int)coreShift;
+      } else {
+        processorId = (apicId >> (int)(coreMaskWith + threadMaskWith));
+        coreId = ((apicId >> (int)(threadMaskWith))
+          - (processorId << (int)(coreMaskWith)));
+        threadId = apicId
+          - (processorId << (int)(coreMaskWith + threadMaskWith))
+          - (coreId << (int)(threadMaskWith));
+      }
+    }
+
+    /// <summary>
+    /// Walks CPUID leaf 0x1F (V2 extended topology), falling back to leaf 0x0B,
+    /// to obtain this thread's 32-bit x2APIC identifier and the shift widths
+    /// that separate SMT threads, cores and packages within it.
+    /// </summary>
+    private static bool TryGetExtendedTopology(uint maxCpuid,
+      out uint x2ApicId, out uint smtShift, out uint coreShift) {
+
+      x2ApicId = 0;
+      smtShift = 0;
+      coreShift = 0;
+
+      uint topologyLeaf;
+      if (maxCpuid >= 0x1F && HasTopologyLevels(0x1F))
+        topologyLeaf = 0x1F;
+      else if (maxCpuid >= 0x0B && HasTopologyLevels(0x0B))
+        topologyLeaf = 0x0B;
+      else
+        return false;
+
+      bool foundCoreLevel = false;
+      for (uint subLeaf = 0; subLeaf < 16; subLeaf++) {
+        CpuInstructions.Cpuid(topologyLeaf, subLeaf, out uint eax, out _,
+          out uint ecx, out uint edx);
+
+        uint levelType = (ecx >> 8) & 0xFF;
+        if (levelType == 0)
+          break;
+
+        uint shift = eax & 0x1F;
+        x2ApicId = edx;
+
+        switch (levelType) {
+          case 1:                       // SMT
+            smtShift = shift;
+            break;
+          case 2:                       // Core
+            coreShift = shift;
+            foundCoreLevel = true;
+            break;
+          default:
+            // Module, Tile and Die levels sit above Core; anything at or
+            // above the core boundary still separates packages correctly.
+            break;
+        }
+      }
+
+      // A processor with no SMT reports no SMT level at all, which is fine:
+      // a zero shift simply means every logical processor is its own core.
+      return foundCoreLevel && coreShift >= smtShift;
+    }
+
+    private static bool HasTopologyLevels(uint leaf) {
+      CpuInstructions.Cpuid(leaf, 0, out _, out uint ebx, out _, out _);
+      return (ebx & 0xFFFF) != 0;
     }
 
     public string Name {
@@ -275,6 +385,14 @@ namespace OpenHardwareMonitor.Hardware.CPU {
 
     public Vendor Vendor {
       get { return vendor; }
+    }
+
+    /// <summary>
+    /// Physical class of the core this logical processor belongs to.
+    /// <see cref="CoreType.Unknown"/> on homogeneous processors.
+    /// </summary>
+    public CoreType CoreType {
+      get { return coreType; }
     }
 
     public uint Family {
