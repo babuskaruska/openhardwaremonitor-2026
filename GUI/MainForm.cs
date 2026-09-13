@@ -894,7 +894,7 @@ namespace OpenHardwareMonitor.GUI {
                 item.Click += delegate(object obj, EventArgs args) {
                   poller.RunLocked(() => {
                     fanCurves.RemoveCurve(node.Sensor);
-                    control.SetSoftware(softwareValue);
+                    control.SetSoftware(fanCurves.LimitDuty(node.Sensor, softwareValue, false));
                   });
                 };
               }
