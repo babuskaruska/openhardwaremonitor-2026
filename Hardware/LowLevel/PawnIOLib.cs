@@ -53,6 +53,7 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
 
     private static readonly object sync = new object();
     private static bool resolveAttempted;
+    private static bool libraryWasMissing;
     private static VersionFunction? versionFunction;
     private static OpenFunction? openFunction;
     private static LoadFunction? loadFunction;
@@ -70,10 +71,14 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
     /// can never find it by name. It is loaded by full path instead, and only
     /// from Program Files: this library runs inside an elevated process, so
     /// it must not be loaded from anywhere a standard user can write.
+    ///
+    /// A missing library is looked for again on the next call, so the
+    /// in-app setup can see PawnIO appear without restarting. A library that
+    /// exists but cannot be used is not retried.
     /// </summary>
     private static bool Resolve() {
       lock (sync) {
-        if (resolveAttempted)
+        if (resolveAttempted && !libraryWasMissing)
           return closeFunction != null;
         resolveAttempted = true;
 
@@ -81,7 +86,8 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
           Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
           "PawnIO", LibraryFileName);
         LibraryPath = path;
-        if (!File.Exists(path) ||
+        libraryWasMissing = !File.Exists(path);
+        if (libraryWasMissing ||
           !NativeLibrary.TryLoad(path, out IntPtr library))
           return false;
 

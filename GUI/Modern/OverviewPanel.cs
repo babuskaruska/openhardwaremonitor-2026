@@ -494,7 +494,7 @@ namespace OpenHardwareMonitor.GUI.Modern {
     private static string AccessNote(string what) {
       return HardwareAccess.Tier == AccessTier.Deep
         ? what + " are not available on this hardware."
-        : what + " need PawnIO and administrator rights.";
+        : what + " need full sensor access. Set it up in Settings › Hardware access.";
     }
 
     // ---- cards -----------------------------------------------------------------------

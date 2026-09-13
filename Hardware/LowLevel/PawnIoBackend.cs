@@ -43,9 +43,9 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
   internal sealed class PawnIoBackend : ILowLevelBackend {
 
     // Module blob names, as published by the PawnIO.Modules project.
-    private const string IntelMsrModule = "IntelMSR";
-    private const string AmdMsrModule = "AMDFamily17";
-    private const string LpcIoModule = "LpcIO";
+    internal const string IntelMsrModule = "IntelMSR";
+    internal const string AmdMsrModule = "AMDFamily17";
+    internal const string LpcIoModule = "LpcIO";
 
     private const string ReadMsrFunction = "ioctl_read_msr";
     private const string WriteMsrFunction = "ioctl_write_msr";
@@ -210,10 +210,17 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
     }
 
     private static string GetMsrModuleForCurrentProcessor() {
+      return GetMsrModule(IsAmdProcessor());
+    }
+
+    internal static string GetMsrModule(bool isAmd) {
+      return isAmd ? AmdMsrModule : IntelMsrModule;
+    }
+
+    internal static bool IsAmdProcessor() {
       CpuInstructions.Cpuid(0, 0, out _, out uint ebx, out uint ecx, out _);
       // "AuthenticAMD" places 'htuA' in EBX and 'DMAc' in ECX.
-      bool isAmd = ebx == 0x68747541 && ecx == 0x444D4163;
-      return isAmd ? AmdMsrModule : IntelMsrModule;
+      return ebx == 0x68747541 && ecx == 0x444D4163;
     }
 
     public bool ReadMsr(uint index, out uint eax, out uint edx) {

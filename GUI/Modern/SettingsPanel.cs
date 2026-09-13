@@ -179,11 +179,16 @@ namespace OpenHardwareMonitor.GUI.Modern {
       row.RefreshValues();
     }
 
+    /// <param name="describe">Re-reads the description on every refresh, for
+    /// rows whose explanation follows state; overrides
+    /// <paramref name="description"/>.</param>
     public void AddButton(string title, string? description, string buttonText, Action action,
-      ButtonKind kind = ButtonKind.Secondary, Func<bool>? visible = null) {
+      ButtonKind kind = ButtonKind.Secondary, Func<bool>? visible = null,
+      Func<string>? describe = null) {
       ModernButton button = new ModernButton { Text = buttonText, Kind = kind };
-      SettingRow row = AddRow(title, description, button,
+      SettingRow row = AddRow(title, describe != null ? describe() : description, button,
         visible == null ? null : () => button.Visible = visible());
+      row.DescriptionProvider = describe;
       button.Click += delegate { action(); };
       row.RefreshValues();
     }

@@ -304,6 +304,7 @@ namespace OpenHardwareMonitor.GUI {
         ? "Full access through " + HardwareAccess.BackendName + "." +
           (HardwareAccess.UnavailableReason != null ? " " + HardwareAccess.UnavailableReason : "")
         : "Basic access. " + (HardwareAccess.UnavailableReason ?? ""));
+      AddPawnIoSetupRow(access); // Guided PawnIO setup: MainForm.PawnIoSetup.cs
       access.AddInfo("Administrator rights", () => isElevated
         ? "Running as administrator."
         : "Not running as administrator: processor temperatures, motherboard sensors and fan control are unavailable.");
