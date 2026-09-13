@@ -34,7 +34,8 @@
          Properties\AssemblyInfo.cs files were removed to avoid CS0579 duplicates. -->
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Version>0.10.0</Version>
-    <InformationalVersion>0.10.0-dev</InformationalVersion>
+    <!-- Release builds from a v* tag set InformationalVersion (see build.yml). -->
+    <InformationalVersion Condition="'$(InformationalVersion)' == ''">0.10.0-dev</InformationalVersion>
     <Product>Open Hardware Monitor</Product>
     <Company>Open Hardware Monitor</Company>
     <Copyright>Copyright © 2009-2020 Michael Möller, © 2020-2026 contributors</Copyright>

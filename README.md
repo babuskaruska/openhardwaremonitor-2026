@@ -11,6 +11,10 @@ loads, clock speeds and drive health on Windows. This fork:
 - understands **2026-era hardware**: hybrid Intel CPUs, NVMe drives, current
   NVIDIA GPUs and DDR5 memory.
 
+**Download:** get `OpenHardwareMonitor.exe` from the
+[latest release](https://github.com/babuskaruska/openhardwaremonitor-2026/releases/latest).
+It is a single file for 64-bit Windows 10 and 11, with nothing to install.
+
 ## Why the original was flagged as malware
 
 The detections were **not false positives**.
