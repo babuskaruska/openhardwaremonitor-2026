@@ -106,6 +106,12 @@ namespace OpenHardwareMonitor.GUI {
       contextMenu.Dispose();
     }
 
+    /// <summary>Adds an item, such as the fan profile submenu, above Exit.</summary>
+    public void AddMenuItem(ToolStripItem item) {
+      // Exit and the separator before it stay last.
+      contextMenu.Items.Insert(Math.Max(0, contextMenu.Items.Count - 2), item);
+    }
+
     public void Redraw() {
       foreach (SensorNotifyIcon icon in list)
         icon.Update();

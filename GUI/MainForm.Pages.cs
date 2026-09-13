@@ -76,6 +76,7 @@ namespace OpenHardwareMonitor.GUI {
         Visible = false
       };
       BuildSettings(settingsPage);
+      InitializeFanControl();
 
       SuspendLayout();
       Controls.Add(fansPage);
@@ -190,7 +191,7 @@ namespace OpenHardwareMonitor.GUI {
     void IFanControlHost.SetFixed(ISensor control, float percent) {
       poller.RunLocked(() => {
         fanCurves.RemoveCurve(control);
-        control.Control?.SetSoftware(percent);
+        control.Control?.SetSoftware(fanCurves.LimitDuty(control, percent, false));
       });
     }
 
