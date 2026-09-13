@@ -25,7 +25,7 @@
 
   <ItemGroup>
     <!-- Heatmaster / T-Balancer fan controllers speak over a serial port. -->
-    <PackageReference Include="System.IO.Ports" Version="10.0.0" />
+    <PackageReference Include="System.IO.Ports" Version="10.0.12" />
   </ItemGroup>
 
 
