@@ -80,6 +80,13 @@ namespace OpenHardwareMonitor.GUI {
         SystemEvents.SessionEnded -= LogSessionEnded;
       };
 
+      // A newer release is announced once per session in the notification area;
+      // clicking the notification opens its release page.
+      UpdateAvailable += (sender, update) => systemTray.ShowNotification(
+        "Open Hardware Monitor " + update.Tag + " is available",
+        "Click to open the release page. Nothing is downloaded automatically.",
+        ToolTipIcon.Info, OpenAvailableUpdate);
+
       // Announce an update found in an earlier session once subscribers exist.
       SynchronizationContext.Current?.Post(_ => OnUpdateStateChanged(), null);
     }
