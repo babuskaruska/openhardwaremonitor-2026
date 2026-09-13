@@ -38,11 +38,20 @@ namespace OpenHardwareMonitor.GUI {
     /// <summary>Must be called on the UI thread, which owns the sensor tree.</summary>
     public static void Run(IWin32Window? owner, IComputer computer,
       object? hardwareLock = null) {
+      Run(owner, computer, hardwareLock, ShowResult);
+    }
+
+    /// <summary>
+    /// Exports, then hands the files to <paramref name="present"/> under the
+    /// same guard and error handling. "Report a problem" presents them its own way.
+    /// </summary>
+    internal static void Run(IWin32Window? owner, IComputer computer,
+      object? hardwareLock, Action<IWin32Window?, DiagnosticExportResult> present) {
       if (running)
         return;
       running = true;
       try {
-        RunCore(owner, computer, hardwareLock);
+        present(owner, Export(computer, hardwareLock));
       } catch (Exception ex) {
         // An export is never worth taking the application down for.
         ShowError(owner, ex);
@@ -51,21 +60,21 @@ namespace OpenHardwareMonitor.GUI {
       }
     }
 
-    private static void RunCore(IWin32Window? owner, IComputer computer,
-      object? hardwareLock) {
-      DiagnosticExportResult result;
+    private static DiagnosticExportResult Export(IComputer computer, object? hardwareLock) {
       try {
         Cursor.Current = Cursors.WaitCursor;
         DiagnosticSnapshot snapshot;
         lock (hardwareLock ?? new object())
           snapshot = DiagnosticSnapshot.Capture(computer,
           new DiagnosticCaptureOptions { ApplicationName = "Open Hardware Monitor" });
-        result = DiagnosticExporter.WriteFiles(snapshot,
+        return DiagnosticExporter.WriteFiles(snapshot,
           DiagnosticExporter.DefaultDirectory);
       } finally {
         Cursor.Current = Cursors.Default;
       }
+    }
 
+    private static void ShowResult(IWin32Window? owner, DiagnosticExportResult result) {
       bool copied = TryCopyToClipboard(result.Markdown);
       TryShowInExplorer(result.MarkdownPath);
 
@@ -88,7 +97,7 @@ namespace OpenHardwareMonitor.GUI {
         Caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
-    private static bool TryCopyToClipboard(string text) {
+    internal static bool TryCopyToClipboard(string text) {
       try {
         // Another process can hold the clipboard open briefly; retry a little.
         Clipboard.SetDataObject(text, true, 5, 100);
@@ -99,7 +108,7 @@ namespace OpenHardwareMonitor.GUI {
       }
     }
 
-    private static void TryShowInExplorer(string path) {
+    internal static void TryShowInExplorer(string path) {
       try {
         string explorer = Path.Combine(Environment.GetFolderPath(
           Environment.SpecialFolder.Windows), "explorer.exe");

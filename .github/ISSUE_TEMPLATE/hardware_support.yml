@@ -1,0 +1,70 @@
+name: Hardware support
+description: A sensor is missing, shows a wrong value or has a wrong name.
+title: "[Hardware]: "
+labels: ["hardware"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Missing or wrong sensors can usually be fixed once we can see what your hardware reports. The **SensorDump** tool in this repository prints exactly that.
+
+        With the [.NET 10 SDK](https://dotnet.microsoft.com/download) installed, run this from a copy of the repository in a terminal opened **as administrator** (with PawnIO installed, if you use it):
+
+        ```
+        dotnet run --project tools/SensorDump -c Release -- --report > sensordump.txt
+        ```
+
+        Please look the output over before you post it.
+
+  - type: input
+    id: version
+    attributes:
+      label: Open Hardware Monitor version
+      description: Shown in Settings › Diagnostics and about › About.
+      placeholder: "0.10.0"
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 Pro 24H2 (build 26100.4061)"
+
+  - type: input
+    id: component
+    attributes:
+      label: Component
+      description: The exact model of the part whose sensors are missing or wrong.
+      placeholder: "Gigabyte B760M GAMING PLUS WIFI DDR4 (BIOS F16)"
+    validations:
+      required: true
+
+  - type: input
+    id: access
+    attributes:
+      label: Access tier
+      description: Shown in Settings › Hardware access. Please also say whether the app runs as administrator.
+      placeholder: "Deep (PawnIO), administrator"
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Which sensors are missing or wrong?
+      description: For wrong values, say what the BIOS or another tool shows at the same time.
+    validations:
+      required: true
+
+  - type: textarea
+    id: sensordump
+    attributes:
+      label: SensorDump output
+      description: Drag in sensordump.txt, or paste its contents.
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics export (optional)
+      description: The .md file from Export for AI, if you have one.

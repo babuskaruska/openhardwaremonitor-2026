@@ -26,6 +26,7 @@ using System.Threading;
 using OpenHardwareMonitor.GUI;
 using OpenHardwareMonitor.Hardware;
 using OpenHardwareMonitor.Hardware.Diagnostics;
+using OpenHardwareMonitor.Hardware.Maintenance;
 
 namespace OpenHardwareMonitor.Utilities {
 
@@ -178,6 +179,7 @@ namespace OpenHardwareMonitor.Utilities {
         } catch (HttpListenerException ex) {
           try { candidate.Close(); } catch (Exception) { }
           LastError = DescribeStartFailure(ex);
+          ApplicationLog.Warning("The web server could not start: " + LastError);
           return false;
         }
 

@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+
+PackageIdentifier: babuskaruska.OpenHardwareMonitor2026
+PackageVersion: 0.10.0
+PackageLocale: en-US
+Publisher: babuskaruska
+PublisherUrl: https://github.com/babuskaruska
+PublisherSupportUrl: https://github.com/babuskaruska/openhardwaremonitor-2026/issues
+PackageName: Open Hardware Monitor 2026
+PackageUrl: https://github.com/babuskaruska/openhardwaremonitor-2026
+License: MPL-2.0
+LicenseUrl: https://github.com/babuskaruska/openhardwaremonitor-2026/blob/master/Licenses/License.html
+Copyright: Copyright (c) 2009-2020 Michael Möller, (c) 2020-2026 contributors
+ShortDescription: A modernised Open Hardware Monitor for Windows 10 and 11. Shows temperatures, fan speeds, voltages, load and power, and controls fans, without shipping a kernel driver.
+Description: |-
+  Open Hardware Monitor 2026 is a modernised fork of Open Hardware Monitor 0.9.6 for .NET 10.
+  It reads processors (including hybrid Intel P-cores and E-cores and AMD Zen 5), graphics cards,
+  memory, NVMe and SATA drives, and motherboard sensors. Deep sensors such as processor core
+  temperatures and motherboard fans use the optional, signed PawnIO driver instead of WinRing0.
+  It has an overview, a full sensor list, fan curves with fail-safes, a local web dashboard and
+  a one-click diagnostics export. It is a single self-contained executable.
+Tags:
+  - hardware-monitor
+  - sensors
+  - temperature
+  - fan-control
+  - cpu
+  - gpu
+ReleaseNotesUrl: https://github.com/babuskaruska/openhardwaremonitor-2026/releases/tag/v0.10.0
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

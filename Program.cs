@@ -13,6 +13,7 @@ using System;
 using System.Threading;
 using System.Windows.Forms;
 using OpenHardwareMonitor.GUI;
+using OpenHardwareMonitor.Hardware.Maintenance;
 using OpenHardwareMonitor.Utilities;
 
 namespace OpenHardwareMonitor {
@@ -26,6 +27,16 @@ namespace OpenHardwareMonitor {
 
     [STAThread]
     public static void Main(string[] args) {
+      // Before anything else, so that a problem during start-up leaves a trace.
+      ApplicationLog.Open();
+      try {
+        Run(args);
+      } finally {
+        ApplicationLog.Close();
+      }
+    }
+
+    private static void Run(string[] args) {
       #if !DEBUG
         Application.ThreadException +=
           new ThreadExceptionEventHandler(Application_ThreadException);
@@ -45,8 +56,11 @@ namespace OpenHardwareMonitor {
         out bool createdNew)) {
         // A restart (for example as administrator) waits for the previous
         // instance to finish closing instead of giving up straight away.
-        if (!createdNew && !WaitForPreviousInstance(args, mutex))
+        if (!createdNew && !WaitForPreviousInstance(args, mutex)) {
+          ApplicationLog.Info("Another instance is already running, so this one exits.");
           return;
+        }
+        LogStart();
 
         // Both of these must precede creating any window. DPI awareness is
         // declared here rather than in the manifest so the WinForms runtime
@@ -111,11 +125,24 @@ namespace OpenHardwareMonitor {
       return SystemColorMode.System;
     }
 
+    private static readonly System.Diagnostics.Stopwatch uptime =
+      System.Diagnostics.Stopwatch.StartNew();
+
+    /// <summary>Sensor access is logged once the hardware is open (see SensorPoller).</summary>
+    private static void LogStart() {
+      EnvironmentFacts facts = EnvironmentFacts.Capture();
+      ApplicationLog.Info("Open Hardware Monitor " + facts.ApplicationVersion + " started on " +
+        facts.Windows + ", " + facts.Architecture + ", " +
+        (facts.IsElevated == true ? "as administrator." : "not as administrator."));
+      Application.ApplicationExit += delegate {
+        ApplicationLog.Info("Open Hardware Monitor stopped after " +
+          EnvironmentFacts.FormatDuration(uptime.Elapsed) + ".");
+      };
+    }
+
     private static void ReportException(Exception e) {
-      using (CrashForm form = new CrashForm()) {
-        form.Exception = e;
-        form.ShowDialog();
-      }
+      // Writes the report to disk before anything is shown.
+      CrashReporter.Report(e);
     }
 
     public static void Application_ThreadException(object sender,

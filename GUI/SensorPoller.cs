@@ -12,9 +12,11 @@
 
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.Threading;
 using System.Windows.Forms;
 using OpenHardwareMonitor.Hardware;
+using OpenHardwareMonitor.Hardware.Maintenance;
 
 namespace OpenHardwareMonitor.GUI {
 
@@ -101,13 +103,38 @@ namespace OpenHardwareMonitor.GUI {
         return function();
     }
 
+    // A device that throws on every update is logged once an hour, with a
+    // count, rather than every second.
+    private readonly RepeatedErrorFilter errorFilter =
+      new RepeatedErrorFilter(TimeSpan.FromHours(1));
+
+    /// <summary>Cheap on the sensor thread: the log only queues the entry.</summary>
+    private void LogUpdateError(Exception ex) {
+      if (errorFilter.ShouldLog(ex, out int suppressed))
+        ApplicationLog.Error("A sensor update failed" + (suppressed > 0
+          ? " (the same error occurred " + suppressed.ToString(CultureInfo.InvariantCulture) +
+            " more times since it was last logged)." : "."), ex);
+    }
+
+    private static string DescribeAccess() {
+      string? missing = HardwareAccess.UnavailableReason;
+      string tier = HardwareAccess.Tier == AccessTier.Deep
+        ? "Deep (" + HardwareAccess.BackendName + ")" : "Base";
+      return missing == null ? tier : tier + ". " + missing;
+    }
+
     private void Run() {
       if (initialize != null) {
         lock (Sync) {
+          Stopwatch opening = Stopwatch.StartNew();
           try {
             initialize();
+            ApplicationLog.Info("Hardware opened in " +
+              opening.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture) +
+              " ms. Sensor access: " + DescribeAccess());
           } catch (Exception ex) {
             LastError = ex;
+            ApplicationLog.Error("Opening the hardware failed.", ex);
           }
         }
       }
@@ -128,6 +155,7 @@ namespace OpenHardwareMonitor.GUI {
           } catch (Exception ex) {
             // One failing device must never stop every sensor updating.
             LastError = ex;
+            LogUpdateError(ex);
           }
         }
         double end = clock.Elapsed.TotalMilliseconds;

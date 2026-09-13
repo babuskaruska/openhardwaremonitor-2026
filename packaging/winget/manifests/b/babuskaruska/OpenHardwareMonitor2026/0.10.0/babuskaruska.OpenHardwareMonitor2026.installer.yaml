@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+
+PackageIdentifier: babuskaruska.OpenHardwareMonitor2026
+PackageVersion: 0.10.0
+InstallerType: portable
+Commands:
+  - openhardwaremonitor
+MinimumOSVersion: 10.0.17763.0
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/babuskaruska/openhardwaremonitor-2026/releases/download/v0.10.0/OpenHardwareMonitor.exe
+    # PLACEHOLDER: run update-manifest.ps1 -Version 0.10.0 to fill in the hash from SHA256SUMS.txt.
+    # Until then, winget validate rejects this manifest, which keeps it from being submitted by mistake.
+    InstallerSha256: REPLACE-WITH-SHA256-OF-OpenHardwareMonitor.exe
+ManifestType: installer
+ManifestVersion: 1.6.0
