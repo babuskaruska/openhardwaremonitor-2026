@@ -186,6 +186,17 @@ namespace OpenHardwareMonitor.Hardware.Diagnostics {
       return fromParameter ? parameter!.Value : DiagnosticThresholds.CpuDefaultTjMax;
     }
 
+    /// <summary>The same for a live sensor, for alerts.</summary>
+    internal static float GetTjMax(ISensor sensor) {
+      foreach (IParameter parameter in sensor.Parameters) {
+        if (!parameter.Name.TrimStart().StartsWith("TjMax", StringComparison.OrdinalIgnoreCase))
+          continue;
+        return float.IsFinite(parameter.Value) && parameter.Value > 0
+          ? parameter.Value : DiagnosticThresholds.CpuDefaultTjMax;
+      }
+      return DiagnosticThresholds.CpuDefaultTjMax;
+    }
+
     private static DiagnosticSeverity? TjMaxSeverity(float? value, float tjMax) {
       if (!value.HasValue)
         return null;
@@ -276,8 +287,11 @@ namespace OpenHardwareMonitor.Hardware.Diagnostics {
     }
 
     private static bool IsGpu(DiagnosticHardware hardware) {
-      return hardware.Type == HardwareType.GpuNvidia ||
-        hardware.Type == HardwareType.GpuAti;
+      return IsGpu(hardware.Type);
+    }
+
+    internal static bool IsGpu(HardwareType type) {
+      return type == HardwareType.GpuNvidia || type == HardwareType.GpuAti;
     }
 
     private static DiagnosticSeverity? GpuSeverity(float? value) {
@@ -373,9 +387,9 @@ namespace OpenHardwareMonitor.Hardware.Diagnostics {
         string n = DiagnosticFormat.Normalize(sensor.Name);
 
         if (n.Contains("spare")) {
-          if (n.Contains("threshold"))
+          if (IsSpareThreshold(n))
             spareThreshold ??= sensor;
-          else if (n.Contains("available"))
+          else if (IsAvailableSpare(n))
             spare ??= sensor;
           continue;
         }
@@ -466,10 +480,25 @@ namespace OpenHardwareMonitor.Hardware.Diagnostics {
         hardware, evidence));
     }
 
+    // Name tests take a name already passed through DiagnosticFormat.Normalize;
+    // alerts reuse them so both agree on which sensors a rule covers.
+
+    internal static bool IsSpareThreshold(string n) {
+      return n.Contains("spare") && n.Contains("threshold");
+    }
+
+    internal static bool IsAvailableSpare(string n) {
+      return n.Contains("spare") && !n.Contains("threshold") && n.Contains("available");
+    }
+
+    internal static bool IsMediaErrorCounter(string n) {
+      return n.Contains("media error") || n.Contains("integrity error") ||
+        n.Contains("uncorrectable error");
+    }
+
     private static void CheckMediaErrors(DiagnosticHardware hardware,
       DiagnosticSensor sensor, string n, List<DiagnosticFinding> findings) {
-      if (!(n.Contains("media error") || n.Contains("integrity error") ||
-        n.Contains("uncorrectable error")))
+      if (!IsMediaErrorCounter(n))
         return;
       if (!sensor.Value.HasValue || sensor.Value.Value <= 0)
         return;

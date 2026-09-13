@@ -12,6 +12,7 @@
 
 using System;
 using System.Collections.Generic;
+using OpenHardwareMonitor.Hardware.Alerts;
 
 namespace OpenHardwareMonitor.Hardware.Diagnostics {
 
@@ -31,6 +32,12 @@ namespace OpenHardwareMonitor.Hardware.Diagnostics {
     /// time/value pairs (JSON only). Statistics always cover the whole history.
     /// </summary>
     public int MaxRecentSamples { get; set; } = DefaultMaxRecentSamples;
+
+    /// <summary>
+    /// The alert log to include, newest first, as returned by
+    /// <see cref="AlertEngine.GetRecentAlerts"/>. Null leaves the section out.
+    /// </summary>
+    public IReadOnlyList<AlertRecord>? RecentAlerts { get; set; }
 
     // Test seams: fixed clock and environment instead of the live machine.
     internal DateTimeOffset? Now { get; set; }
@@ -77,6 +84,9 @@ namespace OpenHardwareMonitor.Hardware.Diagnostics {
 
     /// <summary>The full text report, or null when not requested.</summary>
     public string? Report { get; internal set; }
+
+    /// <summary>Alerts raised while the application ran, newest first, or null when not provided.</summary>
+    public IReadOnlyList<AlertRecord>? RecentAlerts { get; internal set; }
 
     /// <summary>Problems reading individual nodes; the rest was still captured.</summary>
     public IReadOnlyList<string> CaptureErrors { get; internal set; } =
@@ -152,6 +162,8 @@ namespace OpenHardwareMonitor.Hardware.Diagnostics {
       }
 
       snapshot.CaptureErrors = errors;
+      snapshot.RecentAlerts = options.RecentAlerts == null
+        ? null : new List<AlertRecord>(options.RecentAlerts);
       snapshot.Findings = DiagnosticAnalyzer.Analyze(snapshot);
       return snapshot;
     }

@@ -11,6 +11,7 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -18,6 +19,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 using OpenHardwareMonitor.Hardware;
+using OpenHardwareMonitor.Hardware.Alerts;
 using OpenHardwareMonitor.Hardware.Diagnostics;
 
 namespace OpenHardwareMonitor.GUI {
@@ -36,13 +38,15 @@ namespace OpenHardwareMonitor.GUI {
     private static bool running;
 
     /// <summary>Must be called on the UI thread, which owns the sensor tree.</summary>
+    /// <param name="recentAlerts">The alert log to include, newest first, or
+    /// null to leave the section out.</param>
     public static void Run(IWin32Window? owner, IComputer computer,
-      object? hardwareLock = null) {
+      object? hardwareLock = null, IReadOnlyList<AlertRecord>? recentAlerts = null) {
       if (running)
         return;
       running = true;
       try {
-        RunCore(owner, computer, hardwareLock);
+        RunCore(owner, computer, hardwareLock, recentAlerts);
       } catch (Exception ex) {
         // An export is never worth taking the application down for.
         ShowError(owner, ex);
@@ -52,14 +56,17 @@ namespace OpenHardwareMonitor.GUI {
     }
 
     private static void RunCore(IWin32Window? owner, IComputer computer,
-      object? hardwareLock) {
+      object? hardwareLock, IReadOnlyList<AlertRecord>? recentAlerts) {
       DiagnosticExportResult result;
       try {
         Cursor.Current = Cursors.WaitCursor;
         DiagnosticSnapshot snapshot;
         lock (hardwareLock ?? new object())
           snapshot = DiagnosticSnapshot.Capture(computer,
-          new DiagnosticCaptureOptions { ApplicationName = "Open Hardware Monitor" });
+          new DiagnosticCaptureOptions {
+            ApplicationName = "Open Hardware Monitor",
+            RecentAlerts = recentAlerts
+          });
         result = DiagnosticExporter.WriteFiles(snapshot,
           DiagnosticExporter.DefaultDirectory);
       } finally {

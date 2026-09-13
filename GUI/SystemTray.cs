@@ -99,6 +99,7 @@ namespace OpenHardwareMonitor.GUI {
     }
 
     public void Dispose() {
+      DisposeNotifications();
       foreach (SensorNotifyIcon icon in list)
         icon.Dispose();
       mainIcon.Visible = false;
@@ -188,5 +189,94 @@ namespace OpenHardwareMonitor.GUI {
         }
       }
     }
+
+    // ---- notifications (alerts) --------------------------------------------------
+
+#nullable enable
+
+    private const int NotificationTitleLength = 63;
+    private const int NotificationTextLength = 255;
+
+    // If the close event never arrives, the temporary icon goes after this.
+    private const int NotificationIconFallbackMilliseconds = 5 * 60 * 1000;
+
+    private Action? notificationClicked;
+    private bool notificationEventsHooked;
+    private bool notificationIconShown;
+    private bool notificationsDisposed;
+    private DateTime notificationShownUtc;
+    private System.Windows.Forms.Timer? notificationIconTimer;
+
+    /// <summary>
+    /// Shows a notification from the main tray icon; Windows 10 and 11 present
+    /// it as a toast. <paramref name="clicked"/> runs on the UI thread when the
+    /// user clicks it. Safe to call from any thread.
+    /// </summary>
+    public void ShowNotification(string title, string text, ToolTipIcon icon,
+      Action? clicked) {
+      if (UiThread.Redirect(() => ShowNotification(title, text, icon, clicked)))
+        return;
+      if (notificationsDisposed)
+        return;
+
+      if (!notificationEventsHooked) {
+        notificationEventsHooked = true;
+        mainIcon.BalloonTipClicked += delegate {
+          Action? action = notificationClicked;
+          HideNotificationIcon();
+          action?.Invoke();
+        };
+        mainIcon.BalloonTipClosed += delegate {
+          // Showing a notification closes the previous one; that close must
+          // not take the icon away from under the new one.
+          if (DateTime.UtcNow - notificationShownUtc > TimeSpan.FromSeconds(2))
+            HideNotificationIcon();
+        };
+      }
+
+      // A notification needs a visible icon. When the main icon is off, or
+      // replaced by sensor icons, it is shown just for the notification.
+      // Hiding it again also removes the notification from the notification
+      // centre, so that waits until the notification has closed.
+      if (!mainIcon.Visible) {
+        mainIcon.Visible = true;
+        notificationIconShown = true;
+      }
+      notificationClicked = clicked;
+      notificationShownUtc = DateTime.UtcNow;
+      mainIcon.ShowBalloonTip(10000, Truncate(title, NotificationTitleLength),
+        Truncate(string.IsNullOrEmpty(text) ? title : text, NotificationTextLength), icon);
+
+      if (notificationIconShown) {
+        if (notificationIconTimer == null) {
+          notificationIconTimer = new System.Windows.Forms.Timer {
+            Interval = NotificationIconFallbackMilliseconds
+          };
+          notificationIconTimer.Tick += delegate { HideNotificationIcon(); };
+        }
+        notificationIconTimer.Stop();
+        notificationIconTimer.Start();
+      }
+    }
+
+    private void HideNotificationIcon() {
+      notificationIconTimer?.Stop();
+      if (!notificationIconShown || notificationsDisposed)
+        return;
+      notificationIconShown = false;
+      UpdateMainIconVisibilty();
+    }
+
+    private void DisposeNotifications() {
+      notificationsDisposed = true;
+      notificationIconTimer?.Dispose();
+      notificationIconTimer = null;
+    }
+
+    private static string Truncate(string text, int length) {
+      return text.Length <= length ? text : text.Substring(0, length - 1) + "…";
+    }
+
+#nullable restore
   }
 }

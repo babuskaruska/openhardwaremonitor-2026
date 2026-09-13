@@ -11,10 +11,12 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using OpenHardwareMonitor.Hardware.Alerts;
 
 namespace OpenHardwareMonitor.Hardware.Diagnostics {
 
@@ -64,6 +66,8 @@ namespace OpenHardwareMonitor.Hardware.Diagnostics {
         foreach (DiagnosticFinding finding in snapshot.Findings)
           WriteFinding(w, finding);
         w.WriteEndArray();
+
+        WriteRecentAlerts(w, snapshot.RecentAlerts);
 
         w.WriteStartArray("hardware");
         foreach (DiagnosticHardware hardware in snapshot.Hardware)
@@ -141,6 +145,9 @@ namespace OpenHardwareMonitor.Hardware.Diagnostics {
         "[unixTimeMilliseconds, value] pairs, oldest first; only the newest " +
         "samples are included.");
       w.WriteString("units", "Canonical units per sensor type; see each sensor's unit.");
+      w.WriteString("recentAlerts",
+        "Alerts watched over time while the application ran, newest first; null when " +
+        "not provided. Messages use the units chosen in the application.");
       w.WriteEndObject();
     }
 
@@ -174,6 +181,38 @@ namespace OpenHardwareMonitor.Hardware.Diagnostics {
         case DiagnosticSeverity.Warning: return "warning";
         default: return "info";
       }
+    }
+
+    internal static string AlertKindName(AlertKind kind) {
+      switch (kind) {
+        case AlertKind.Escalated: return "escalated";
+        case AlertKind.Recovered: return "recovered";
+        default: return "raised";
+      }
+    }
+
+    private static void WriteRecentAlerts(Utf8JsonWriter w,
+      IReadOnlyList<AlertRecord>? alerts) {
+      if (alerts == null) {
+        w.WriteNull("recentAlerts");
+        return;
+      }
+      w.WriteStartArray("recentAlerts");
+      foreach (AlertRecord alert in alerts) {
+        w.WriteStartObject();
+        w.WriteString("timeLocal", DiagnosticFormat.IsoLocal(alert.Time));
+        w.WriteString("timeUtc", DiagnosticFormat.IsoUtc(alert.Time));
+        w.WriteString("kind", AlertKindName(alert.Kind));
+        w.WriteString("severity", SeverityName(alert.Severity));
+        w.WriteString("ruleId", alert.RuleId);
+        w.WriteString("title", alert.Title);
+        w.WriteString("message", alert.Message);
+        WriteString(w, "hardwareName", alert.HardwareName);
+        WriteString(w, "sensorId", alert.SensorIdentifier);
+        w.WriteBoolean("notified", alert.Notify);
+        w.WriteEndObject();
+      }
+      w.WriteEndArray();
     }
 
     private static void WriteFinding(Utf8JsonWriter w, DiagnosticFinding finding) {
