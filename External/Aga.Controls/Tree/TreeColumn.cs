@@ -274,9 +274,9 @@ namespace Aga.Controls.Tree
 			}
 
 			if (textSize.Width < maxTextSize.Width)
-				TextRenderer.DrawText(gr, Header, font, innerBounds, SystemColors.ControlText, _baseHeaderFlags | TextFormatFlags.Left);
+				TextRenderer.DrawText(gr, Header, font, innerBounds, HeaderTextColor, _baseHeaderFlags | TextFormatFlags.Left);
             else
-				TextRenderer.DrawText(gr, Header, font, innerBounds, SystemColors.ControlText, _headerFlags);
+				TextRenderer.DrawText(gr, Header, font, innerBounds, HeaderTextColor, _headerFlags);
         }
 
 		private void DrawSortMark(Graphics gr, Rectangle bounds, int x)
@@ -302,6 +302,19 @@ namespace Aga.Controls.Tree
 			gr.FillRectangle(SystemBrushes.HotTrack, rect.X-1, rect.Y, 2, rect.Height);
 		}
 
+		/// <summary>
+		/// Flat headers without a bevel or themed gradient, coloured by the
+		/// application through HeaderBackground and HeaderForeground.
+		/// </summary>
+		public static bool FlatHeaders { get; set; } = true;
+		public static Color HeaderBackground { get; set; } = SystemColors.Window;
+		public static Color HeaderForeground { get; set; } = SystemColors.WindowText;
+
+		private static Color HeaderTextColor
+		{
+			get { return FlatHeaders ? Blend(HeaderBackground, HeaderForeground, 0.62f) : SystemColors.ControlText; }
+		}
+
 		private static Color Blend(Color background, Color foreground, float amount)
 		{
 			return Color.FromArgb(
@@ -316,20 +329,19 @@ namespace Aga.Controls.Tree
 			// is drawn in SystemColors.ControlText, which is light in dark mode: the
 			// headers rendered as light text on a light background. The classic branch
 			// below would draw a bright 3D bevel. Draw a flat header instead.
-			if (Application.IsDarkModeEnabled)
+			if (FlatHeaders)
 			{
-				Color background = SystemColors.Control;
+				// Flat: the header shares the list background, separated only by a
+				// faint rule underneath. No vertical dividers.
+				Color background = HeaderBackground;
 				if (pressed)
-					background = Blend(background, SystemColors.ControlText, 0.16f);
+					background = Blend(background, HeaderForeground, 0.10f);
 				else if (hot)
-					background = Blend(background, SystemColors.ControlText, 0.08f);
+					background = Blend(background, HeaderForeground, 0.05f);
 				using (SolidBrush brush = new SolidBrush(background))
 					gr.FillRectangle(brush, bounds);
-				using (Pen pen = new Pen(Blend(SystemColors.Control, SystemColors.ControlText, 0.25f)))
-				{
-					gr.DrawLine(pen, bounds.Right - 1, bounds.Y + 3, bounds.Right - 1, bounds.Bottom - 4);
+				using (Pen pen = new Pen(Blend(HeaderBackground, HeaderForeground, 0.08f)))
 					gr.DrawLine(pen, bounds.X, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
-				}
 			}
 			else if (Application.RenderWithVisualStyles)
 			{

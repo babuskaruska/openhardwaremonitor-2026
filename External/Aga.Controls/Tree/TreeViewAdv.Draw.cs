@@ -172,7 +172,32 @@ namespace Aga.Controls.Tree
 			DrawNode(node, context);
 		}
 
-		private Brush GrayBrush = new SolidBrush(Color.FromArgb(240, 240, 240));		
+		private SolidBrush _selectionBrush;
+		private Color _selectionBrushColor;
+
+		/// <summary>
+		/// Full-row selection fill derived from the list's own colours, so it
+		/// suits dark mode and custom themes instead of a fixed light grey.
+		/// </summary>
+		private Brush GrayBrush
+		{
+			get
+			{
+				float amount = Application.IsDarkModeEnabled ? 0.14f : 0.07f;
+				Color color = Color.FromArgb(
+					(int)(BackColor.R + (ForeColor.R - BackColor.R) * amount),
+					(int)(BackColor.G + (ForeColor.G - BackColor.G) * amount),
+					(int)(BackColor.B + (ForeColor.B - BackColor.B) * amount));
+				if (_selectionBrush == null || _selectionBrushColor != color)
+				{
+					if (_selectionBrush != null)
+						_selectionBrush.Dispose();
+					_selectionBrush = new SolidBrush(color);
+					_selectionBrushColor = color;
+				}
+				return _selectionBrush;
+			}
+		}		
 
 		private void DrawVerticalGridLines(Graphics gr, int y)
 		{

@@ -61,12 +61,29 @@ namespace Aga.Controls.Tree.NodeControls
 				int dy = (int)Math.Round((float)(r.Height - scaledY) / 2);
 				if (Application.RenderWithVisualStyles)
 				{
-					VisualStyleRenderer renderer;
-					if (node.IsExpanded)
-						renderer = OpenedRenderer;
-					else
-						renderer = ClosedRenderer;
-					renderer.DrawBackground(context.Graphics, new Rectangle(r.X, r.Y + dy, scaledX, scaledY));
+					// A flat chevron in a muted text colour instead of the boxed themed
+					// glyph: quieter, and crisp at any DPI.
+					Color treeBack = node.Tree.BackColor, treeFore = node.Tree.ForeColor;
+					Color chevronColor = Color.FromArgb(
+						(treeBack.R * 45 + treeFore.R * 55) / 100,
+						(treeBack.G * 45 + treeFore.G * 55) / 100,
+						(treeBack.B * 45 + treeFore.B * 55) / 100);
+					float size = scaledY * 0.8f;
+					float cx = r.X + scaledX / 2f;
+					float cy = r.Y + r.Height / 2f;
+					PointF[] points = node.IsExpanded
+						? new[] { new PointF(cx - size / 2, cy - size / 4), new PointF(cx, cy + size / 4), new PointF(cx + size / 2, cy - size / 4) }
+						: new[] { new PointF(cx - size / 4, cy - size / 2), new PointF(cx + size / 4, cy), new PointF(cx - size / 4, cy + size / 2) };
+					System.Drawing.Drawing2D.SmoothingMode previousSmoothing = context.Graphics.SmoothingMode;
+					context.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+					using (Pen pen = new Pen(chevronColor, Math.Max(1.5f, scaledY / 6f)))
+					{
+						pen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+						pen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+						pen.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;
+						context.Graphics.DrawLines(pen, points);
+					}
+					context.Graphics.SmoothingMode = previousSmoothing;
 				}
 				else
 				{
