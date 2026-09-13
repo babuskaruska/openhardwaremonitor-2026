@@ -1038,7 +1038,8 @@ namespace OpenHardwareMonitor.GUI {
     /// Runs on the UI thread, which owns the sensor tree.
     /// </summary>
     private void exportDiagnosticsMenuItem_Click(object sender, EventArgs e) {
-      DiagnosticsExport.Run(Visible ? this : null, computer, poller.Sync);
+      DiagnosticsExport.Run(Visible ? this : null, computer, poller.Sync,
+        alerts.GetRecentAlerts());
     }
 
     private void resetMinMaxMenuItem_Click(object sender, EventArgs e) {

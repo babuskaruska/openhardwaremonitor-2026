@@ -53,6 +53,7 @@ namespace OpenHardwareMonitor.GUI {
     /// server exist, so the settings page can bind to all of them.
     /// </summary>
     private void InitializePages() {
+      InitializeAlerts();
       Animator.UserDisabled = !settings.GetValue("animations", true);
       poller.IntervalMilliseconds = settings.GetValue("sensorUpdateInterval", 1000);
 
@@ -277,6 +278,8 @@ namespace OpenHardwareMonitor.GUI {
         () => showHiddenSensors.Value, value => showHiddenSensors.Value = value);
       sensors.AddButton("Minimum and maximum values", "Start recording lows and highs again.",
         "Reset", () => resetMinMaxMenuItem_Click(this, EventArgs.Empty));
+
+      BuildAlertSettings(page);
 
       SettingsSection logging = page.AddSection("Logging");
       logging.AddToggle("Log sensors to a file", "Writes every sensor to a CSV file in the log folder.",

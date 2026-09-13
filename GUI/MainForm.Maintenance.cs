@@ -187,7 +187,8 @@ namespace OpenHardwareMonitor.GUI {
     }
 
     private void ReportProblem() {
-      ProblemReporter.Run(Visible ? this : null, computer, poller.Sync);
+      ProblemReporter.Run(Visible ? this : null, computer, poller.Sync,
+        alerts.GetRecentAlerts());
     }
 
     // ---- application log ----------------------------------------------------------

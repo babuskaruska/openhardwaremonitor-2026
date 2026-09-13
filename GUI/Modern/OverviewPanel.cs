@@ -86,6 +86,7 @@ namespace OpenHardwareMonitor.GUI.Modern {
       header = new OverviewHeader { Dock = DockStyle.Top };
       header.DetailsClicked += delegate { DetailsRequested?.Invoke(this, null); };
       header.ExportClicked += delegate { ExportRequested?.Invoke(this, EventArgs.Empty); };
+      header.ChipClicked += delegate { AlertsRequested?.Invoke(this, EventArgs.Empty); };
 
       host = new BufferedPanel { Dock = DockStyle.Fill, AutoScroll = true };
       host.Resize += delegate { LayoutCards(false); };
@@ -110,6 +111,15 @@ namespace OpenHardwareMonitor.GUI.Modern {
     public event EventHandler<IHardware?>? DetailsRequested;
 
     public event EventHandler? ExportRequested;
+
+    /// <summary>Raised when the alert chip in the header is clicked.</summary>
+    public event EventHandler? AlertsRequested;
+
+    /// <summary>
+    /// Active alerts and their worst severity, read after each update. While
+    /// there are any, the header chip shows them instead of the access tier.
+    /// </summary>
+    public Func<(int Count, Severity Severity)>? AlertStatus { get; set; }
 
     public bool ShowExportButton {
       get { return header.ShowExport; }
@@ -163,6 +173,15 @@ namespace OpenHardwareMonitor.GUI.Modern {
     private void UpdateHeader() {
       header.Title = Environment.MachineName;
       header.Subtitle = SystemSummary();
+      // Active alerts take the chip over from the access tier until they clear.
+      (int Count, Severity Severity) alerts = AlertStatus?.Invoke() ?? (0, Severity.Normal);
+      header.ChipClickable = alerts.Count > 0;
+      if (alerts.Count > 0) {
+        header.Chip = alerts.Count == 1 ? "1 alert"
+          : alerts.Count.ToString(CultureInfo.CurrentCulture) + " alerts";
+        header.ChipSeverity = alerts.Severity;
+        return;
+      }
       bool deep = HardwareAccess.Tier == AccessTier.Deep;
       header.Chip = deep ? "Full sensor access" : "Basic sensor access";
       header.ChipSeverity = deep ? Severity.Normal : Severity.Warm;
@@ -763,9 +782,9 @@ namespace OpenHardwareMonitor.GUI.Modern {
     private const float EntranceSeconds = 0.55f;
 
     private Theme theme = Theme.Current;
-    private Rectangle detailsBounds, exportBounds;
+    private Rectangle detailsBounds, exportBounds, chipBounds;
     private readonly AnimatedValue detailsHover, exportHover;
-    private int pressed; // 0 none, 1 details, 2 export
+    private int pressed; // 0 none, 1 details, 2 export, 3 chip
     private double entranceStart = double.NaN;
     private int fontDpi;
     private Font? titleFont, subtitleFont, chipFont, buttonFont;
@@ -783,11 +802,15 @@ namespace OpenHardwareMonitor.GUI.Modern {
 
     public event EventHandler? DetailsClicked;
     public event EventHandler? ExportClicked;
+    public event EventHandler? ChipClicked;
 
     public string Title { get; set; } = "";
     public string Subtitle { get; set; } = "";
     public string Chip { get; set; } = "";
     public Severity ChipSeverity { get; set; }
+
+    /// <summary>Whether the chip opens something (the alert list) when clicked.</summary>
+    public bool ChipClickable { get; set; }
 
     public bool ShowDetails { get; set; } = true;
 
@@ -886,12 +909,16 @@ namespace OpenHardwareMonitor.GUI.Modern {
         new Point((int)margin, (int)(rowY + (rowHeight - subtitleSize.Height) / 2)),
         theme.TextSecondary, Flags);
 
+      chipBounds = Rectangle.Empty;
       if (!string.IsNullOrEmpty(Chip)) {
         Size chipText = TextRenderer.MeasureText(Chip, chipFont, Size.Empty, Flags);
         float dot = S(7);
         RectangleF chip = new RectangleF(margin + subtitleSize.Width + S(12), rowY,
           S(10) + dot + S(6) + chipText.Width + S(10), chipFont.Height + S(6));
-        Color tint = ChipSeverity == Severity.Normal ? theme.Good : theme.Warm;
+        Color tint = ChipSeverity == Severity.Hot ? theme.Hot
+          : ChipSeverity == Severity.Warm ? theme.Warm : theme.Good;
+        if (ChipClickable)
+          chipBounds = Rectangle.Round(chip);
         using (GraphicsPath path = Theme.RoundedRect(chip, chip.Height / 2))
         using (SolidBrush fill = new SolidBrush(
           Theme.Blend(theme.Background, tint, theme.IsDark ? 0.18f : 0.12f)))
@@ -981,9 +1008,10 @@ namespace OpenHardwareMonitor.GUI.Modern {
       base.OnMouseMove(e);
       bool overDetails = detailsBounds.Contains(e.Location);
       bool overExport = exportBounds.Contains(e.Location);
+      bool overChip = chipBounds.Contains(e.Location);
       detailsHover.Set(overDetails ? 1 : 0);
       exportHover.Set(overExport ? 1 : 0);
-      Cursor = overDetails || overExport ? Cursors.Hand : Cursors.Default;
+      Cursor = overDetails || overExport || overChip ? Cursors.Hand : Cursors.Default;
     }
 
     protected override void OnMouseLeave(EventArgs e) {
@@ -1000,7 +1028,8 @@ namespace OpenHardwareMonitor.GUI.Modern {
       if (e.Button != MouseButtons.Left)
         return;
       pressed = detailsBounds.Contains(e.Location) ? 1
-        : exportBounds.Contains(e.Location) ? 2 : 0;
+        : exportBounds.Contains(e.Location) ? 2
+        : chipBounds.Contains(e.Location) ? 3 : 0;
       Invalidate();
     }
 
@@ -1015,6 +1044,8 @@ namespace OpenHardwareMonitor.GUI.Modern {
         DetailsClicked?.Invoke(this, EventArgs.Empty);
       else if (was == 2 && exportBounds.Contains(e.Location))
         ExportClicked?.Invoke(this, EventArgs.Empty);
+      else if (was == 3 && chipBounds.Contains(e.Location))
+        ChipClicked?.Invoke(this, EventArgs.Empty);
     }
   }
 }

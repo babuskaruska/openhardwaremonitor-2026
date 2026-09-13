@@ -14,6 +14,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
+using OpenHardwareMonitor.Hardware.Alerts;
 
 namespace OpenHardwareMonitor.Hardware.Diagnostics {
 
@@ -36,6 +37,7 @@ namespace OpenHardwareMonitor.Hardware.Diagnostics {
       WritePreamble(md, snapshot);
       WriteSummary(md, snapshot);
       WriteFindings(md, snapshot);
+      WriteRecentAlerts(md, snapshot);
       WriteHardware(md, snapshot);
       WriteAppendix(md, snapshot);
       return md.ToString();
@@ -225,6 +227,38 @@ namespace OpenHardwareMonitor.Hardware.Diagnostics {
       if (evidence.SensorIdentifier != null)
         b.Append(" [").Append(evidence.SensorIdentifier).Append(']');
       return b.ToString();
+    }
+
+    private static void WriteRecentAlerts(StringBuilder md, DiagnosticSnapshot snapshot) {
+      if (snapshot.RecentAlerts == null)
+        return;
+
+      Line(md, "## Recent alerts");
+      Line(md);
+      Line(md, "Alerts raised while the application was running, newest first (at most " +
+        AlertEngine.MaxRecentAlerts.ToString(CultureInfo.InvariantCulture) + "). Unlike " +
+        "the findings, these were watched over time: each condition held for its rule's " +
+        "duration before the alert fired, and \"recovered\" marks when it cleared. " +
+        "Messages use the units chosen in the application, which may be °F.");
+      Line(md);
+      if (snapshot.RecentAlerts.Count == 0) {
+        Line(md, "None since the application started.");
+        Line(md);
+        return;
+      }
+
+      Line(md, "| Time | Severity | Event | Alert | Details |");
+      Line(md, "|---|---|---|---|---|");
+      foreach (AlertRecord alert in snapshot.RecentAlerts) {
+        Line(md, "| " + DiagnosticFormat.LocalTimestamp(alert.Time) +
+          " | " + SeverityLabel(alert.Severity) +
+          " | " + DiagnosticJsonWriter.AlertKindName(alert.Kind) +
+          " | " + Cell(alert.Title) +
+          " | " + Cell(alert.Message) +
+          (alert.SensorIdentifier != null ? " `" + Code(alert.SensorIdentifier) + "`" : "") +
+          " |");
+      }
+      Line(md);
     }
 
     private static void WriteHardware(StringBuilder md, DiagnosticSnapshot snapshot) {

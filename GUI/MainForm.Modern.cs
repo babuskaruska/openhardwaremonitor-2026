@@ -142,6 +142,7 @@ namespace OpenHardwareMonitor.GUI {
     /// <summary>Runs on the sensor thread after each update, under the hardware lock.</summary>
     private void PollOnSensorThread() {
       fanCurves.Update();
+      alerts.Update();
       if (logSensors != null && logSensors.Value && delayCount >= 4)
         logger.Log();
       if (delayCount < 4)

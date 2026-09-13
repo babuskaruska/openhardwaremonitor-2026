@@ -11,10 +11,12 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Windows.Forms;
 using OpenHardwareMonitor.Hardware;
 using OpenHardwareMonitor.Hardware.Diagnostics;
+using OpenHardwareMonitor.Hardware.Alerts;
 using OpenHardwareMonitor.Hardware.Maintenance;
 
 namespace OpenHardwareMonitor.GUI {
@@ -30,8 +32,9 @@ namespace OpenHardwareMonitor.GUI {
     private const string Caption = "Report a problem";
 
     /// <summary>Must be called on the UI thread, which owns the sensor tree.</summary>
-    public static void Run(IWin32Window? owner, IComputer computer, object hardwareLock) {
-      DiagnosticsExport.Run(owner, computer, hardwareLock, Present);
+    public static void Run(IWin32Window? owner, IComputer computer, object hardwareLock,
+      IReadOnlyList<AlertRecord>? recentAlerts = null) {
+      DiagnosticsExport.Run(owner, computer, hardwareLock, recentAlerts, Present);
     }
 
     private static void Present(IWin32Window? owner, DiagnosticExportResult result) {
