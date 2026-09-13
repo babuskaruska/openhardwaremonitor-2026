@@ -1,28 +1,34 @@
-﻿/*
- 
+/*
+
   This Source Code Form is subject to the terms of the Mozilla Public
   License, v. 2.0. If a copy of the MPL was not distributed with this
   file, You can obtain one at http://mozilla.org/MPL/2.0/.
- 
+
   Copyright (C) 2011 Michael Möller <mmoeller@openhardwaremonitor.org>
-	
+
 */
 
 using System;
-using System.Collections.Generic;
 using System.Windows.Forms;
 using OpenHardwareMonitor.Utilities;
 
 namespace OpenHardwareMonitor.GUI {
+
+  /// <summary>
+  /// A persisted choice among mutually exclusive menu items.
+  ///
+  /// MenuItem.RadioCheck, which drew a bullet instead of a tick, has no
+  /// ToolStripMenuItem equivalent; exclusivity is maintained here instead.
+  /// </summary>
   public class UserRadioGroup {
-    private string name;
+    private readonly string name;
     private int value;
-    private MenuItem[] menuItems;
+    private readonly ToolStripMenuItem[] menuItems;
     private event EventHandler changed;
-    private PersistentSettings settings;
+    private readonly PersistentSettings settings;
 
     public UserRadioGroup(string name, int value,
-      MenuItem[] menuItems, PersistentSettings settings) {
+      ToolStripMenuItem[] menuItems, PersistentSettings settings) {
       this.settings = settings;
       this.name = name;
       if (name != null)
@@ -38,7 +44,7 @@ namespace OpenHardwareMonitor.GUI {
         this.menuItems[i].Click += delegate(object sender, EventArgs e) {
           this.Value = index;
         };
-      }      
+      }
     }
 
     public int Value {
@@ -48,7 +54,7 @@ namespace OpenHardwareMonitor.GUI {
           this.value = value;
           if (this.name != null)
             settings.SetValue(name, value);
-          for (int i = 0; i < this.menuItems.Length; i++) 
+          for (int i = 0; i < this.menuItems.Length; i++)
             this.menuItems[i].Checked = i == value;
           if (changed != null)
             changed(this, null);

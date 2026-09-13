@@ -26,7 +26,7 @@ namespace OpenHardwareMonitor.GUI {
     private readonly PersistentSettings settings;
     private readonly UnitManager unitManager;
 
-    private readonly Plot plot;
+    private readonly PlotView plot;
     private readonly PlotModel model;
     private readonly TimeSpanAxis timeAxis = new TimeSpanAxis();
     private readonly SortedDictionary<SensorType, LinearAxis> axes =
@@ -42,11 +42,11 @@ namespace OpenHardwareMonitor.GUI {
 
       this.model = CreatePlotModel();
 
-      this.plot = new Plot();
+      this.plot = new PlotView();
       this.plot.Dock = DockStyle.Fill;
       this.plot.Model = model;
-      this.plot.BackColor = Color.White;
-      this.plot.ContextMenu = CreateMenu();
+      this.plot.BackColor = SystemColors.Window;
+      this.plot.ContextMenuStrip = CreateMenu();
 
       UpdateAxesPosition();
 
@@ -56,60 +56,69 @@ namespace OpenHardwareMonitor.GUI {
     }
 
     public void SetCurrentSettings() {
-      settings.SetValue("plotPanel.MinTimeSpan", (float)timeAxis.ViewMinimum);
-      settings.SetValue("plotPanel.MaxTimeSpan", (float)timeAxis.ViewMaximum);
+      settings.SetValue("plotPanel.MinTimeSpan", (float)timeAxis.ActualMinimum);
+      settings.SetValue("plotPanel.MaxTimeSpan", (float)timeAxis.ActualMaximum);
 
       foreach (var axis in axes.Values) {
-        settings.SetValue("plotPanel.Min" + axis.Key, (float)axis.ViewMinimum);
-        settings.SetValue("plotPanel.Max" + axis.Key, (float)axis.ViewMaximum);
+        settings.SetValue("plotPanel.Min" + axis.Key, (float)axis.ActualMinimum);
+        settings.SetValue("plotPanel.Max" + axis.Key, (float)axis.ActualMaximum);
       }
     }
 
-    private ContextMenu CreateMenu() {
-      ContextMenu menu = new ContextMenu();
+    private ContextMenuStrip CreateMenu() {
+      ContextMenuStrip menu = new ContextMenuStrip();
 
-      MenuItem stackedAxesMenuItem = new MenuItem("Stacked Axes");
+      ToolStripMenuItem stackedAxesMenuItem = new ToolStripMenuItem("Stacked Axes");
       stackedAxes = new UserOption("stackedAxes", true,
         stackedAxesMenuItem, settings);
       stackedAxes.Changed += (sender, e) => {
         UpdateAxesPosition();
         InvalidatePlot();
       };
-      menu.MenuItems.Add(stackedAxesMenuItem);
+      menu.Items.Add(stackedAxesMenuItem);
 
-      MenuItem timeWindow = new MenuItem("Time Window");
-      MenuItem[] timeWindowMenuItems =
-        { new MenuItem("Auto", 
+      ToolStripMenuItem timeWindow = new ToolStripMenuItem("Time Window");
+      ToolStripMenuItem[] timeWindowMenuItems =
+        { new ToolStripMenuItem("Auto", null, 
             (s, e) => { timeAxis.Zoom(0, double.NaN); InvalidatePlot(); }),
-          new MenuItem("5 min", 
+          new ToolStripMenuItem("5 min", null, 
             (s, e) => { timeAxis.Zoom(0, 5 * 60); InvalidatePlot(); }),
-          new MenuItem("10 min", 
+          new ToolStripMenuItem("10 min", null, 
             (s, e) => { timeAxis.Zoom(0, 10 * 60); InvalidatePlot(); }),
-          new MenuItem("20 min", 
+          new ToolStripMenuItem("20 min", null, 
             (s, e) => { timeAxis.Zoom(0, 20 * 60); InvalidatePlot(); }),
-          new MenuItem("30 min", 
+          new ToolStripMenuItem("30 min", null, 
             (s, e) => { timeAxis.Zoom(0, 30 * 60); InvalidatePlot(); }),
-          new MenuItem("45 min", 
+          new ToolStripMenuItem("45 min", null, 
             (s, e) => { timeAxis.Zoom(0, 45 * 60); InvalidatePlot(); }),
-          new MenuItem("1 h", 
+          new ToolStripMenuItem("1 h", null, 
             (s, e) => { timeAxis.Zoom(0, 60 * 60); InvalidatePlot(); }),
-          new MenuItem("1.5 h", 
+          new ToolStripMenuItem("1.5 h", null, 
             (s, e) => { timeAxis.Zoom(0, 1.5 * 60 * 60); InvalidatePlot(); }),
-          new MenuItem("2 h", 
+          new ToolStripMenuItem("2 h", null, 
             (s, e) => { timeAxis.Zoom(0, 2 * 60 * 60); InvalidatePlot(); }),
-          new MenuItem("3 h", 
+          new ToolStripMenuItem("3 h", null, 
             (s, e) => { timeAxis.Zoom(0, 3 * 60 * 60); InvalidatePlot(); }),
-          new MenuItem("6 h", 
+          new ToolStripMenuItem("6 h", null, 
             (s, e) => { timeAxis.Zoom(0, 6 * 60 * 60); InvalidatePlot(); }),
-          new MenuItem("12 h", 
+          new ToolStripMenuItem("12 h", null, 
             (s, e) => { timeAxis.Zoom(0, 12 * 60 * 60); InvalidatePlot(); }),
-          new MenuItem("24 h", 
+          new ToolStripMenuItem("24 h", null, 
             (s, e) => { timeAxis.Zoom(0, 24 * 60 * 60); InvalidatePlot(); }) };
-      foreach (MenuItem mi in timeWindowMenuItems)
-        timeWindow.MenuItems.Add(mi);
-      menu.MenuItems.Add(timeWindow);
+      foreach (ToolStripMenuItem mi in timeWindowMenuItems)
+        timeWindow.DropDownItems.Add(mi);
+      menu.Items.Add(timeWindow);
 
       return menu;
+    }
+
+    /// <summary>Mixes <paramref name="amount"/> of foreground into background.</summary>
+    private static OxyColor Blend(Color background, Color foreground,
+      double amount) {
+      return OxyColor.FromRgb(
+        (byte)(background.R + (foreground.R - background.R) * amount),
+        (byte)(background.G + (foreground.G - background.G) * amount),
+        (byte)(background.B + (foreground.B - background.B) * amount));
     }
 
     private PlotModel CreatePlotModel() {
@@ -117,10 +126,10 @@ namespace OpenHardwareMonitor.GUI {
       timeAxis.Position = AxisPosition.Bottom;
       timeAxis.MajorGridlineStyle = LineStyle.Solid;
       timeAxis.MajorGridlineThickness = 1;
-      timeAxis.MajorGridlineColor = OxyColor.FromRgb(192, 192, 192);
+      timeAxis.MajorGridlineColor = Blend(SystemColors.Window, SystemColors.WindowText, 0.25);
       timeAxis.MinorGridlineStyle = LineStyle.Solid;
       timeAxis.MinorGridlineThickness = 1;
-      timeAxis.MinorGridlineColor = OxyColor.FromRgb(232, 232, 232);
+      timeAxis.MinorGridlineColor = Blend(SystemColors.Window, SystemColors.WindowText, 0.10);
       timeAxis.StartPosition = 1;
       timeAxis.EndPosition = 0;
       timeAxis.MinimumPadding = 0;
@@ -175,6 +184,17 @@ namespace OpenHardwareMonitor.GUI {
       model.PlotMargins = new OxyThickness(0);
       model.IsLegendVisible = false;
 
+      // Follow the application colour mode rather than assuming black on
+      // white, which is unreadable in dark mode.
+      OxyColor text = SystemColors.WindowText.ToOxyColor();
+      model.TextColor = text;
+      model.PlotAreaBorderColor =
+        Blend(SystemColors.Window, SystemColors.WindowText, 0.4);
+      foreach (var axis in model.Axes) {
+        axis.TicklineColor = text;
+        axis.AxislineColor = text;
+      }
+
       return model;
     }
 
@@ -187,15 +207,10 @@ namespace OpenHardwareMonitor.GUI {
       foreach (ISensor sensor in sensors) {
         var series = new LineSeries();
         if (sensor.SensorType == SensorType.Temperature) {
-          series.ItemsSource = sensor.Values.Select(value => new DataPoint {
-            X = (now - value.Time).TotalSeconds,
-            Y = unitManager.TemperatureUnit == TemperatureUnit.Celsius ? 
-              value.Value : UnitManager.CelsiusToFahrenheit(value.Value).Value
-          });
+          series.ItemsSource = sensor.Values.Select(value => new DataPoint((now - value.Time).TotalSeconds, unitManager.TemperatureUnit == TemperatureUnit.Celsius ? 
+              value.Value : UnitManager.CelsiusToFahrenheit(value.Value).Value));
         } else {
-          series.ItemsSource = sensor.Values.Select(value => new DataPoint {
-            X = (now - value.Time).TotalSeconds, Y = value.Value
-          });
+          series.ItemsSource = sensor.Values.Select(value => new DataPoint((now - value.Time).TotalSeconds, value.Value));
         }
         series.Color = colors[sensor].ToOxyColor();
         series.StrokeThickness = 1;

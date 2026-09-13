@@ -1,17 +1,15 @@
-﻿/*
- 
+/*
+
   This Source Code Form is subject to the terms of the Mozilla Public
   License, v. 2.0. If a copy of the MPL was not distributed with this
   file, You can obtain one at http://mozilla.org/MPL/2.0/.
- 
+
   Copyright (C) 2009-2012 Michael Möller <mmoeller@openhardwaremonitor.org>
-	
+
 */
 
 using System;
 using System.Collections.Generic;
-using System.Drawing;
-using System.Text;
 using System.Windows.Forms;
 using OpenHardwareMonitor.Hardware;
 using OpenHardwareMonitor.Utilities;
@@ -23,10 +21,16 @@ namespace OpenHardwareMonitor.GUI {
     private UnitManager unitManager;
     private List<SensorNotifyIcon> list = new List<SensorNotifyIcon>();
     private bool mainIconEnabled = false;
-    private NotifyIconAdv mainIcon;
+
+    // The stock NotifyIcon. This used to be NotifyIconAdv, an 800-line
+    // reimplementation that reflected into WinForms internals
+    // (System.Windows.Forms.Command, ContextMenu.OnPopup and friends) which
+    // no longer exist in .NET, so it could not be ported.
+    private readonly NotifyIcon mainIcon;
+    private readonly ContextMenuStrip contextMenu;
 
     public SystemTray(IComputer computer, PersistentSettings settings,
-      UnitManager unitManager) 
+      UnitManager unitManager)
     {
       this.computer = computer;
       this.settings = settings;
@@ -34,21 +38,21 @@ namespace OpenHardwareMonitor.GUI {
       computer.HardwareAdded += new HardwareEventHandler(HardwareAdded);
       computer.HardwareRemoved += new HardwareEventHandler(HardwareRemoved);
 
-      this.mainIcon = new NotifyIconAdv();
+      this.mainIcon = new NotifyIcon();
 
-      ContextMenu contextMenu = new ContextMenu();
-      MenuItem hideShowItem = new MenuItem("Hide/Show");
+      contextMenu = new ContextMenuStrip();
+      ToolStripMenuItem hideShowItem = new ToolStripMenuItem("Hide/Show");
       hideShowItem.Click += delegate(object obj, EventArgs args) {
         SendHideShowCommand();
       };
-      contextMenu.MenuItems.Add(hideShowItem);
-      contextMenu.MenuItems.Add(new MenuItem("-"));      
-      MenuItem exitItem = new MenuItem("Exit");
+      contextMenu.Items.Add(hideShowItem);
+      contextMenu.Items.Add(new ToolStripSeparator());
+      ToolStripMenuItem exitItem = new ToolStripMenuItem("Exit");
       exitItem.Click += delegate(object obj, EventArgs args) {
         SendExitCommand();
       };
-      contextMenu.MenuItems.Add(exitItem);
-      this.mainIcon.ContextMenu = contextMenu;
+      contextMenu.Items.Add(exitItem);
+      this.mainIcon.ContextMenuStrip = contextMenu;
       this.mainIcon.DoubleClick += delegate(object obj, EventArgs args) {
         SendHideShowCommand();
       };
@@ -59,7 +63,7 @@ namespace OpenHardwareMonitor.GUI {
     private void HardwareRemoved(IHardware hardware) {
       hardware.SensorAdded -= new SensorEventHandler(SensorAdded);
       hardware.SensorRemoved -= new SensorEventHandler(SensorRemoved);
-      foreach (ISensor sensor in hardware.Sensors) 
+      foreach (ISensor sensor in hardware.Sensors)
         SensorRemoved(sensor);
       foreach (IHardware subHardware in hardware.SubHardware)
         HardwareRemoved(subHardware);
@@ -75,20 +79,22 @@ namespace OpenHardwareMonitor.GUI {
     }
 
     private void SensorAdded(ISensor sensor) {
-      if (settings.GetValue(new Identifier(sensor.Identifier, 
-        "tray").ToString(), false)) 
-        Add(sensor, false);   
+      if (settings.GetValue(new Identifier(sensor.Identifier,
+        "tray").ToString(), false))
+        Add(sensor, false);
     }
 
     private void SensorRemoved(ISensor sensor) {
-      if (Contains(sensor)) 
+      if (Contains(sensor))
         Remove(sensor, false);
     }
 
     public void Dispose() {
       foreach (SensorNotifyIcon icon in list)
         icon.Dispose();
+      mainIcon.Visible = false;
       mainIcon.Dispose();
+      contextMenu.Dispose();
     }
 
     public void Redraw() {
@@ -106,7 +112,7 @@ namespace OpenHardwareMonitor.GUI {
     public void Add(ISensor sensor, bool balloonTip) {
       if (Contains(sensor)) {
         return;
-      } else {        
+      } else {
         list.Add(new SensorNotifyIcon(this, sensor, balloonTip, settings, unitManager));
         UpdateMainIconVisibilty();
         settings.SetValue(new Identifier(sensor.Identifier, "tray").ToString(), true);
@@ -131,7 +137,7 @@ namespace OpenHardwareMonitor.GUI {
       if (instance != null) {
         list.Remove(instance);
         UpdateMainIconVisibilty();
-        instance.Dispose();        
+        instance.Dispose();
       }
     }
 

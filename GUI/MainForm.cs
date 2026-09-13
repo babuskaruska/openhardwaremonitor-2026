@@ -21,7 +21,6 @@ using System.Windows.Forms;
 using Aga.Controls.Tree;
 using Aga.Controls.Tree.NodeControls;
 using OpenHardwareMonitor.Hardware;
-using OpenHardwareMonitor.WMI;
 using OpenHardwareMonitor.Utilities;
 
 namespace OpenHardwareMonitor.GUI {
@@ -61,7 +60,7 @@ namespace OpenHardwareMonitor.GUI {
 
     private UserOption showGadget;
     private UserRadioGroup plotLocation;
-    private WmiProvider wmiProvider;
+    private UserRadioGroup theme;
 
     private UserOption runWebServer;
     private HttpServer server;
@@ -85,8 +84,7 @@ namespace OpenHardwareMonitor.GUI {
       }
 
       this.settings = new PersistentSettings();      
-      this.settings.Load(Path.ChangeExtension(
-        Application.ExecutablePath, ".config"));
+      this.settings.Load(GetConfigurationPath());
 
       this.unitManager = new UnitManager(settings);
 
@@ -156,7 +154,6 @@ namespace OpenHardwareMonitor.GUI {
         gadget = new SensorGadget(computer, settings, unitManager);
         gadget.HideShowCommand += hideShowClick;
 
-        wmiProvider = new WmiProvider(computer);
       }
 
       logger = new Logger(computer);
@@ -277,6 +274,30 @@ namespace OpenHardwareMonitor.GUI {
       celsiusMenuItem.Checked = 
         unitManager.TemperatureUnit == TemperatureUnit.Celsius;
       fahrenheitMenuItem.Checked = !celsiusMenuItem.Checked;
+
+      // Theme. WinForms applies the colour mode only to windows created
+      // after it is set (see Program.ReadColorMode), so a change applies on
+      // the next start rather than immediately.
+      ToolStripMenuItem themeMenuItem = new ToolStripMenuItem("Theme");
+      ToolStripMenuItem[] themeItems = {
+        new ToolStripMenuItem("Follow Windows"),
+        new ToolStripMenuItem("Light"),
+        new ToolStripMenuItem("Dark") };
+      themeMenuItem.DropDownItems.AddRange(themeItems);
+      optionsMenuItem.DropDownItems.Insert(
+        optionsMenuItem.DropDownItems.IndexOf(temperatureUnitsMenuItem),
+        themeMenuItem);
+      theme = new UserRadioGroup("theme", 0, themeItems, settings);
+      bool themeInitialized = false;
+      theme.Changed += delegate(object sender, EventArgs e) {
+        // Changed fires once on subscription; only react to real changes.
+        if (!themeInitialized)
+          return;
+        MessageBox.Show(this, "The new theme will be applied the next time " +
+          "Open Hardware Monitor starts.", "Theme", MessageBoxButtons.OK,
+          MessageBoxIcon.Information);
+      };
+      themeInitialized = true;
 
       server = new HttpServer(root, this.settings.GetValue("listenerPort", 8085));
       if (server.PlatformNotSupported) {
@@ -581,8 +602,6 @@ namespace OpenHardwareMonitor.GUI {
       if (gadget != null)
         gadget.Redraw();
 
-      if (wmiProvider != null)
-        wmiProvider.Update();
 
 
       if (logSensors != null && logSensors.Value && delayCount >= 4)
@@ -590,6 +609,31 @@ namespace OpenHardwareMonitor.GUI {
 
       if (delayCount < 4)
         delayCount++;
+    }
+
+    /// <summary>
+    /// Settings live under %LOCALAPPDATA%. They used to be written next to
+    /// the executable, which inside Program Files only worked because the
+    /// process ran elevated, and left the file owned by the elevated token.
+    /// An existing file beside the executable is migrated once, so upgrading
+    /// users keep their configuration.
+    /// </summary>
+    internal static string GetConfigurationPath() {
+      string directory = Path.Combine(Environment.GetFolderPath(
+        Environment.SpecialFolder.LocalApplicationData), "OpenHardwareMonitor");
+      string path = Path.Combine(directory, "OpenHardwareMonitor.config");
+      try {
+        Directory.CreateDirectory(directory);
+        if (!File.Exists(path)) {
+          string legacy = Path.ChangeExtension(Application.ExecutablePath,
+            ".config");
+          if (File.Exists(legacy))
+            File.Copy(legacy, path);
+        }
+      } catch (IOException) {
+      } catch (UnauthorizedAccessException) {
+      }
+      return path;
     }
 
     private void SaveConfiguration() {
@@ -607,8 +651,7 @@ namespace OpenHardwareMonitor.GUI {
         this.settings.SetValue("listenerPort", server.ListenerPort);
       }
 
-      string fileName = Path.ChangeExtension(
-          System.Windows.Forms.Application.ExecutablePath, ".config");
+      string fileName = GetConfigurationPath();
       try {
         settings.Save(fileName);
       } catch (UnauthorizedAccessException) {
@@ -680,55 +723,55 @@ namespace OpenHardwareMonitor.GUI {
       if (info.Node != null) {
         SensorNode node = info.Node.Tag as SensorNode;
         if (node != null && node.Sensor != null) {
-          treeContextMenu.MenuItems.Clear();
+          treeContextMenu.Items.Clear();
           if (node.Sensor.Parameters.Length > 0) {
-            MenuItem item = new MenuItem("Parameters...");
+            ToolStripMenuItem item = new ToolStripMenuItem("Parameters...");
             item.Click += delegate(object obj, EventArgs args) {
               ShowParameterForm(node.Sensor);
             };
-            treeContextMenu.MenuItems.Add(item);
+            treeContextMenu.Items.Add(item);
           }
           if (nodeTextBoxText.EditEnabled) {
-            MenuItem item = new MenuItem("Rename");
+            ToolStripMenuItem item = new ToolStripMenuItem("Rename");
             item.Click += delegate(object obj, EventArgs args) {
               nodeTextBoxText.BeginEdit();
             };
-            treeContextMenu.MenuItems.Add(item);
+            treeContextMenu.Items.Add(item);
           }
           if (node.IsVisible) {
-            MenuItem item = new MenuItem("Hide");
+            ToolStripMenuItem item = new ToolStripMenuItem("Hide");
             item.Click += delegate(object obj, EventArgs args) {
               node.IsVisible = false;
             };
-            treeContextMenu.MenuItems.Add(item);
+            treeContextMenu.Items.Add(item);
           } else {
-            MenuItem item = new MenuItem("Unhide");
+            ToolStripMenuItem item = new ToolStripMenuItem("Unhide");
             item.Click += delegate(object obj, EventArgs args) {
               node.IsVisible = true;
             };
-            treeContextMenu.MenuItems.Add(item);
+            treeContextMenu.Items.Add(item);
           }
-          treeContextMenu.MenuItems.Add(new MenuItem("-"));
+          treeContextMenu.Items.Add(new ToolStripSeparator());
           {
-            MenuItem item = new MenuItem("Pen Color...");
+            ToolStripMenuItem item = new ToolStripMenuItem("Pen Color...");
             item.Click += delegate(object obj, EventArgs args) {
               ColorDialog dialog = new ColorDialog();
               dialog.Color = node.PenColor.GetValueOrDefault();
               if (dialog.ShowDialog() == DialogResult.OK)
                 node.PenColor = dialog.Color;
             };
-            treeContextMenu.MenuItems.Add(item);
+            treeContextMenu.Items.Add(item);
           }
           {
-            MenuItem item = new MenuItem("Reset Pen Color");
+            ToolStripMenuItem item = new ToolStripMenuItem("Reset Pen Color");
             item.Click += delegate(object obj, EventArgs args) {
               node.PenColor = null;
             };
-            treeContextMenu.MenuItems.Add(item);
+            treeContextMenu.Items.Add(item);
           }
-          treeContextMenu.MenuItems.Add(new MenuItem("-"));
+          treeContextMenu.Items.Add(new ToolStripSeparator());
           {
-            MenuItem item = new MenuItem("Show in Tray");
+            ToolStripMenuItem item = new ToolStripMenuItem("Show in Tray");
             item.Checked = systemTray.Contains(node.Sensor);
             item.Click += delegate(object obj, EventArgs args) {
               if (item.Checked)
@@ -736,10 +779,10 @@ namespace OpenHardwareMonitor.GUI {
               else
                 systemTray.Add(node.Sensor, true);
             };
-            treeContextMenu.MenuItems.Add(item);
+            treeContextMenu.Items.Add(item);
           }
           if (gadget != null) {
-            MenuItem item = new MenuItem("Show in Gadget");
+            ToolStripMenuItem item = new ToolStripMenuItem("Show in Gadget");
             item.Checked = gadget.Contains(node.Sensor);
             item.Click += delegate(object obj, EventArgs args) {
               if (item.Checked) {
@@ -748,27 +791,26 @@ namespace OpenHardwareMonitor.GUI {
                 gadget.Add(node.Sensor);
               }
             };
-            treeContextMenu.MenuItems.Add(item);
+            treeContextMenu.Items.Add(item);
           }
           if (node.Sensor.Control != null) {
-            treeContextMenu.MenuItems.Add(new MenuItem("-"));
+            treeContextMenu.Items.Add(new ToolStripSeparator());
             IControl control = node.Sensor.Control;
-            MenuItem controlItem = new MenuItem("Control");
-            MenuItem defaultItem = new MenuItem("Default");
+            ToolStripMenuItem controlItem = new ToolStripMenuItem("Control");
+            ToolStripMenuItem defaultItem = new ToolStripMenuItem("Default");
             defaultItem.Checked = control.ControlMode == ControlMode.Default;
-            controlItem.MenuItems.Add(defaultItem);
+            controlItem.DropDownItems.Add(defaultItem);
             defaultItem.Click += delegate(object obj, EventArgs args) {
               control.SetDefault();
             };
-            MenuItem manualItem = new MenuItem("Manual");
-            controlItem.MenuItems.Add(manualItem);
+            ToolStripMenuItem manualItem = new ToolStripMenuItem("Manual");
+            controlItem.DropDownItems.Add(manualItem);
             manualItem.Checked = control.ControlMode == ControlMode.Software;
             for (int i = 0; i <= 100; i += 5) {
               if (i <= control.MaxSoftwareValue &&
                   i >= control.MinSoftwareValue) {
-                MenuItem item = new MenuItem(i + " %");
-                item.RadioCheck = true;
-                manualItem.MenuItems.Add(item);
+                ToolStripMenuItem item = new ToolStripMenuItem(i + " %");
+                manualItem.DropDownItems.Add(item);
                 item.Checked = control.ControlMode == ControlMode.Software &&
                   Math.Round(control.SoftwareValue) == i;
                 int softwareValue = i;
@@ -777,7 +819,7 @@ namespace OpenHardwareMonitor.GUI {
                 };
               }
             }
-            treeContextMenu.MenuItems.Add(controlItem);
+            treeContextMenu.Items.Add(controlItem);
           }
 
           treeContextMenu.Show(treeView, new Point(m.X, m.Y));
@@ -785,14 +827,14 @@ namespace OpenHardwareMonitor.GUI {
 
         HardwareNode hardwareNode = info.Node.Tag as HardwareNode;
         if (hardwareNode != null && hardwareNode.Hardware != null) {
-          treeContextMenu.MenuItems.Clear();
+          treeContextMenu.Items.Clear();
 
           if (nodeTextBoxText.EditEnabled) {
-            MenuItem item = new MenuItem("Rename");
+            ToolStripMenuItem item = new ToolStripMenuItem("Rename");
             item.Click += delegate(object obj, EventArgs args) {
               nodeTextBoxText.BeginEdit();
             };
-            treeContextMenu.MenuItems.Add(item);
+            treeContextMenu.Items.Add(item);
           }
 
           treeContextMenu.Show(treeView, new Point(m.X, m.Y));
@@ -821,10 +863,10 @@ namespace OpenHardwareMonitor.GUI {
       const int SC_CLOSE = 0xF060;
 
       if (minimizeToTray.Value && 
-        m.Msg == WM_SYSCOMMAND && m.WParam.ToInt64() == SC_MINIMIZE) {
+        m.Msg == WM_SYSCOMMAND && (m.WParam.ToInt64() & 0xFFF0) == SC_MINIMIZE) {
         SysTrayHideShow();
       } else if (minimizeOnClose.Value &&
-        m.Msg == WM_SYSCOMMAND && m.WParam.ToInt64() == SC_CLOSE) {
+        m.Msg == WM_SYSCOMMAND && (m.WParam.ToInt64() & 0xFFF0) == SC_CLOSE) {
         /*
          * Apparently the user wants to minimize rather than close
          * Now we still need to check if we're going to the tray or not

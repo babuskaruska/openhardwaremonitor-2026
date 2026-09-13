@@ -64,6 +64,7 @@ namespace OpenHardwareMonitor.Utilities {
 
         if (listenerThread == null) {
           listenerThread = new Thread(HandleRequests);
+          listenerThread.IsBackground = true;
           listenerThread.Start();
         }
       } catch (Exception) {
@@ -77,24 +78,41 @@ namespace OpenHardwareMonitor.Utilities {
       if (PlatformNotSupported)
         return false;
 
+      // This used to call Thread.Abort, which throws
+      // PlatformNotSupportedException on .NET 5 and later - turning the web
+      // server off would have crashed the application. Stopping the listener
+      // completes the pending BeginGetContext, and the request loop sees
+      // IsListening go false and exits on its own.
       try {
-        listenerThread.Abort();
-        listener.Stop();
-        listenerThread = null;
+        if (listener.IsListening)
+          listener.Stop();
       } catch (HttpListenerException) {
-      } catch (ThreadAbortException) {
-      } catch (NullReferenceException) {
-      } catch (Exception) {
+      } catch (ObjectDisposedException) {
       }
+
+      Thread thread = listenerThread;
+      listenerThread = null;
+      if (thread != null && thread != Thread.CurrentThread)
+        thread.Join(TimeSpan.FromSeconds(2));
       return true;
     }
 
     private void HandleRequests() {
 
       while (listener.IsListening) {
-        var context = listener.BeginGetContext(
-          new AsyncCallback(ListenerCallback), listener);
-        context.AsyncWaitHandle.WaitOne();
+        // The listener can be stopped between the IsListening check and this
+        // call; that is a normal shutdown, not an error.
+        try {
+          var context = listener.BeginGetContext(
+            new AsyncCallback(ListenerCallback), listener);
+          context.AsyncWaitHandle.WaitOne();
+        } catch (HttpListenerException) {
+          break;
+        } catch (ObjectDisposedException) {
+          break;
+        } catch (InvalidOperationException) {
+          break;
+        }
       }
     }
 
@@ -368,14 +386,6 @@ namespace OpenHardwareMonitor.Utilities {
     public int ListenerPort {
       get { return listenerPort; }
       set { listenerPort = value; }
-    }
-
-    ~HttpServer() {
-      if (PlatformNotSupported)
-        return;
-
-      StopHTTPListener();
-      listener.Abort();
     }
 
     public void Quit() {

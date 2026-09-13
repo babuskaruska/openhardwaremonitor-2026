@@ -91,12 +91,12 @@ namespace OpenHardwareMonitor.GUI {
       }
     }
 
-    public ContextMenu ContextMenu {
+    public ContextMenuStrip ContextMenuStrip {
       get {
-        return window.ContextMenu;
+        return window.ContextMenuStrip;
       }
       set {
-        window.ContextMenu = value;
+        window.ContextMenuStrip = value;
       }
     }
 
