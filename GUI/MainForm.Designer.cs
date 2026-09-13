@@ -303,7 +303,7 @@ namespace OpenHardwareMonitor.GUI {
       this.log1hMenuItem.Text = "1h";
       this.log2hMenuItem.Text = "2h";
       this.log6hMenuItem.Text = "6h";
-      this.webMenuItem.Text = "Remote Web Server";
+      this.webMenuItem.Text = "Web Server";
       this.webMenuItem.DropDownItems.AddRange(new ToolStripItem[] {
         this.runWebServerMenuItem,
         this.serverPortMenuItem});

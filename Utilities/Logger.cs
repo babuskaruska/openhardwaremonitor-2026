@@ -1,10 +1,11 @@
-﻿/*
- 
+/*
+
   This Source Code Form is subject to the terms of the Mozilla Public
   License, v. 2.0. If a copy of the MPL was not distributed with this
   file, You can obtain one at http://mozilla.org/MPL/2.0/.
- 
-	Copyright (C) 2013 Michael Möller <mmoeller@openhardwaremonitor.org>
+
+  Copyright (C) 2011-2013 Michael Möller <mmoeller@openhardwaremonitor.org>
+  Copyright (C) 2026 Open Hardware Monitor contributors
 
 */
 
@@ -18,7 +19,7 @@ using OpenHardwareMonitor.Hardware;
 namespace OpenHardwareMonitor.Utilities {
   public class Logger {
 
-    private const string fileNameFormat = 
+    private const string fileNameFormat =
       "OpenHardwareMonitorLog-{0:yyyy-MM-dd}.csv";
 
     private readonly IComputer computer;
@@ -33,7 +34,23 @@ namespace OpenHardwareMonitor.Utilities {
     public Logger(IComputer computer) {
       this.computer = computer;
       this.computer.HardwareAdded += HardwareAdded;
-      this.computer.HardwareRemoved += HardwareRemoved;      
+      this.computer.HardwareRemoved += HardwareRemoved;
+    }
+
+    /// <summary>
+    /// Where the daily CSV logs are written.
+    ///
+    /// They used to go to AppDomain.BaseDirectory, beside the executable.
+    /// Inside Program Files that is not writable without elevation, and the
+    /// file creation was not guarded, so enabling logging there threw from the
+    /// update timer and brought up the crash dialog.
+    /// </summary>
+    public static string LogDirectory {
+      get {
+        return Path.Combine(Environment.GetFolderPath(
+          Environment.SpecialFolder.LocalApplicationData),
+          "OpenHardwareMonitor", "Logs");
+      }
     }
 
     private void HardwareRemoved(IHardware hardware) {
@@ -75,8 +92,8 @@ namespace OpenHardwareMonitor.Utilities {
     }
 
     private static string GetFileName(DateTime date) {
-      return AppDomain.CurrentDomain.BaseDirectory +
-        Path.DirectorySeparatorChar + string.Format(fileNameFormat, date);
+      return Path.Combine(LogDirectory,
+        string.Format(CultureInfo.InvariantCulture, fileNameFormat, date));
     }
 
     private bool OpenExistingLogFile() {
@@ -85,12 +102,12 @@ namespace OpenHardwareMonitor.Utilities {
 
       try {
         String line;
-        using (StreamReader reader = new StreamReader(fileName)) 
-          line = reader.ReadLine(); 
-       
+        using (StreamReader reader = new StreamReader(fileName))
+          line = reader.ReadLine();
+
         if (string.IsNullOrEmpty(line))
           return false;
-        
+
         identifiers = line.Split(',').Skip(1).ToArray();
       } catch {
         identifiers = null;
@@ -134,7 +151,8 @@ namespace OpenHardwareMonitor.Utilities {
         writer.Write("Time,");
         for (int i = 0; i < sensors.Length; i++) {
           writer.Write('"');
-          writer.Write(sensors[i].Name);
+          // A quote inside a sensor name would otherwise end the CSV field.
+          writer.Write(sensors[i].Name.Replace("\"", "\"\""));
           writer.Write('"');
           if (i < sensors.Length - 1)
             writer.Write(",");
@@ -146,21 +164,25 @@ namespace OpenHardwareMonitor.Utilities {
 
     public TimeSpan LoggingInterval { get; set; }
 
-    public void Log() {      
+    public void Log() {
       var now = DateTime.Now;
 
       if (lastLoggedTime + LoggingInterval - new TimeSpan(5000000) > now)
-        return;      
-
-      if (day != now.Date || !File.Exists(fileName)) {
-        day = now.Date;
-        fileName = GetFileName(day);
-
-        if (!OpenExistingLogFile())
-          CreateNewLogFile();
-      }
+        return;
 
       try {
+        if (day != now.Date || !File.Exists(fileName)) {
+          Directory.CreateDirectory(LogDirectory);
+          day = now.Date;
+          fileName = GetFileName(day);
+
+          if (!OpenExistingLogFile())
+            CreateNewLogFile();
+        }
+
+        if (sensors == null)
+          return;
+
         using (StreamWriter writer = new StreamWriter(new FileStream(fileName,
           FileMode.Append, FileAccess.Write, FileShare.ReadWrite))) {
           writer.Write(now.ToString("G", CultureInfo.InvariantCulture));
@@ -178,7 +200,13 @@ namespace OpenHardwareMonitor.Utilities {
               writer.WriteLine();
           }
         }
-      } catch (IOException) { }
+      } catch (Exception ex) when (ex is IOException ||
+        ex is UnauthorizedAccessException) {
+        // Skip this sample and retry on the next tick. Forcing a fresh file
+        // check means a transient failure while creating it is recovered from.
+        day = DateTime.MinValue;
+        return;
+      }
 
       lastLoggedTime = now;
     }

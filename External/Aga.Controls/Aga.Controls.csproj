@@ -16,7 +16,9 @@
     <!-- WFO1000 is a .NET 10 analyser asking for DesignerSerializationVisibility
          on every non-trivial property. This control is used from code, not from
          the WinForms designer, so the guidance does not apply. -->
-    <NoWarn>$(NoWarn);CS0618;CS0612;SYSLIB0003;SYSLIB0051;WFO1000;WFO5001</NoWarn>
+    <!-- SYSLIB0050: TreeNodeAdv keeps an ISerializable contract that only
+         formatter-based serialization used; .NET 10 no longer provides it. -->
+    <NoWarn>$(NoWarn);CS0618;CS0612;SYSLIB0003;SYSLIB0050;SYSLIB0051;WFO1000;WFO5001;WFO5002;WFO5003</NoWarn>
     <EnableWindowsFormsAnalyzers>false</EnableWindowsFormsAnalyzers>
   </PropertyGroup>
 

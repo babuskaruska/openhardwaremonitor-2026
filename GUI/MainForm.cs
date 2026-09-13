@@ -299,7 +299,7 @@ namespace OpenHardwareMonitor.GUI {
       };
       themeInitialized = true;
 
-      server = new HttpServer(root, this.settings.GetValue("listenerPort", 8085));
+      server = new HttpServer(root, computer, this, settings);
       if (server.PlatformNotSupported) {
         webMenuItemSeparator.Visible = false;
         webMenuItem.Visible = false;
@@ -308,14 +308,66 @@ namespace OpenHardwareMonitor.GUI {
       runWebServer = new UserOption("runWebServerMenuItem", false,
         runWebServerMenuItem, settings);
       runWebServer.Changed += delegate(object sender, EventArgs e) {
-        if (runWebServer.Value)
-          server.StartHTTPListener();
-        else
+        if (runWebServer.Value) {
+          // Starting used to fail silently (port in use, no rights to bind),
+          // leaving Run checked with nothing listening.
+          if (!server.StartHTTPListener()) {
+            string error = server.LastError;
+            runWebServer.Value = false;
+            if (Visible && error != null)
+              MessageBox.Show(this, "The web server could not be started:\n\n" +
+                error, "Web Server", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+          }
+        } else {
           server.StopHTTPListener();
+        }
       };
+
+      // Remote access is opt-in and token-protected; see HttpServer.
+      ToolStripMenuItem allowRemoteMenuItem =
+        new ToolStripMenuItem("Allow Remote Connections");
+      allowRemoteMenuItem.Checked = server.AllowRemoteConnections;
+      allowRemoteMenuItem.Click += delegate(object sender, EventArgs e) {
+        bool allow = !server.AllowRemoteConnections;
+        if (allow && MessageBox.Show(this,
+          "Other devices on your network will be able to read your sensors " +
+          "using a link that contains an access token (see Web Server > Port).\n\n" +
+          "Listening on the network requires running as administrator.",
+          "Allow Remote Connections", MessageBoxButtons.OKCancel,
+          MessageBoxIcon.Information) != DialogResult.OK)
+          return;
+        server.AllowRemoteConnections = allow;
+        allowRemoteMenuItem.Checked = allow;
+        if (runWebServer.Value && !server.IsListening) {
+          string error = server.LastError;
+          runWebServer.Value = false;
+          if (error != null)
+            MessageBox.Show(this, "The web server could not be restarted:\n\n" +
+              error, "Web Server", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+      };
+      webMenuItem.DropDownItems.Insert(1, allowRemoteMenuItem);
 
       logSensors = new UserOption("logSensorsMenuItem", false, logSensorsMenuItem,
         settings);
+
+      // Logs now live under %LOCALAPPDATA% (see Logger), not beside the
+      // executable, so give people a way to find them.
+      ToolStripMenuItem openLogFolderMenuItem =
+        new ToolStripMenuItem("Open Log Folder");
+      openLogFolderMenuItem.Click += delegate(object sender, EventArgs e) {
+        try {
+          Directory.CreateDirectory(Logger.LogDirectory);
+          System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+            Logger.LogDirectory) { UseShellExecute = true });
+        } catch (Exception ex) {
+          MessageBox.Show(this, "The log folder could not be opened:\n\n" +
+            ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+      };
+      optionsMenuItem.DropDownItems.Insert(
+        optionsMenuItem.DropDownItems.IndexOf(loggingIntervalMenuItem) + 1,
+        openLogFolderMenuItem);
 
       loggingInterval = new UserRadioGroup("loggingInterval", 0,
         new[] { log1sMenuItem, log2sMenuItem, log5sMenuItem, log10sMenuItem,

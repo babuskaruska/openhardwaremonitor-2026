@@ -302,9 +302,36 @@ namespace Aga.Controls.Tree
 			gr.FillRectangle(SystemBrushes.HotTrack, rect.X-1, rect.Y, 2, rect.Height);
 		}
 
+		private static Color Blend(Color background, Color foreground, float amount)
+		{
+			return Color.FromArgb(
+				(int)(background.R + (foreground.R - background.R) * amount),
+				(int)(background.G + (foreground.G - background.G) * amount),
+				(int)(background.B + (foreground.B - background.B) * amount));
+		}
+
 		internal static void DrawBackground(Graphics gr, Rectangle bounds, bool pressed, bool hot)
 		{
-			if (Application.RenderWithVisualStyles)
+			// The themed header renderer only has a light appearance, while header text
+			// is drawn in SystemColors.ControlText, which is light in dark mode: the
+			// headers rendered as light text on a light background. The classic branch
+			// below would draw a bright 3D bevel. Draw a flat header instead.
+			if (Application.IsDarkModeEnabled)
+			{
+				Color background = SystemColors.Control;
+				if (pressed)
+					background = Blend(background, SystemColors.ControlText, 0.16f);
+				else if (hot)
+					background = Blend(background, SystemColors.ControlText, 0.08f);
+				using (SolidBrush brush = new SolidBrush(background))
+					gr.FillRectangle(brush, bounds);
+				using (Pen pen = new Pen(Blend(SystemColors.Control, SystemColors.ControlText, 0.25f)))
+				{
+					gr.DrawLine(pen, bounds.Right - 1, bounds.Y + 3, bounds.Right - 1, bounds.Bottom - 4);
+					gr.DrawLine(pen, bounds.X, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
+				}
+			}
+			else if (Application.RenderWithVisualStyles)
 			{
 				CreateRenderers();
 				if (pressed)

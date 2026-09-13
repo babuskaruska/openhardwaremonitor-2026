@@ -187,7 +187,7 @@ namespace OpenHardwareMonitor.Tools.SensorDump {
         case SensorType.SmallData:
           return value.ToString("F0", CultureInfo.InvariantCulture) + " MB";
         case SensorType.Throughput:
-          return value.ToString("F0", CultureInfo.InvariantCulture) + " B/s";
+          return value.ToString("F2", CultureInfo.InvariantCulture) + " MB/s";
         case SensorType.Flow:
           return value.ToString("F0", CultureInfo.InvariantCulture) + " L/h";
         default:

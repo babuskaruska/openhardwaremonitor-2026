@@ -1,0 +1,153 @@
+/*
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+  Copyright (C) 2026 Open Hardware Monitor contributors
+*/
+
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-alt: #f8f9fb;
+  --border: #dde1e6;
+  --text: #1c1f23;
+  --muted: #5e6670;
+  --accent: #2b6cb0;
+  --warn-bg: #fff6e0;
+  --warn-border: #e6c16a;
+  --error: #b42318;
+  --radius: 10px;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181b;
+    --surface: #1f2226;
+    --surface-alt: #25292e;
+    --border: #33383e;
+    --text: #e6e8eb;
+    --muted: #9aa3ad;
+    --accent: #7ab3f5;
+    --warn-bg: #2e2716;
+    --warn-border: #7a6428;
+    --error: #ff8a80;
+  }
+}
+
+[hidden] { display: none !important; }
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.identity { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.identity h1 { margin: 0; font-size: 16px; font-weight: 600; }
+.status { margin: 0; font-size: 12px; color: var(--muted); }
+.status.error { color: var(--error); }
+
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls input, .controls select, .controls button {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 9px;
+}
+.controls input { width: 200px; max-width: 60vw; }
+.controls button { cursor: pointer; min-width: 44px; }
+.interval { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+
+.notice {
+  margin: 16px 20px 0;
+  padding: 10px 14px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius);
+}
+
+main {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 16px;
+  padding: 16px 20px;
+  align-items: start;
+}
+
+@media (max-width: 480px) {
+  main { grid-template-columns: 1fr; padding: 12px; }
+  .bar { padding: 10px 12px; }
+}
+
+.hardware {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.hardware > summary {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+}
+.hardware > summary::-webkit-details-marker { display: none; }
+.hardware:not([open]) > summary { border-bottom: 0; }
+.hardware > summary img { width: 20px; height: 20px; flex: none; }
+.hardware-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hardware-parent { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+
+.table-wrap { overflow-x: auto; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 4px 14px; text-align: left; white-space: nowrap; }
+th { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+td.name { overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+tbody tr + tr td { border-top: 1px solid var(--border); }
+tr.group th {
+  padding-top: 10px;
+  color: var(--accent);
+  border-top: 1px solid var(--border);
+}
+tbody:first-of-type tr.group th { border-top: 0; }
+
+footer {
+  padding: 8px 20px 24px;
+  color: var(--muted);
+  font-size: 12px;
+}
+footer a { color: var(--accent); }
+
+.empty {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  text-align: center;
+  padding: 40px 0;
+}

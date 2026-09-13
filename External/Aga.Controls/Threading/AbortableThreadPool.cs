@@ -88,14 +88,9 @@ namespace Aga.Controls.Threading
 				}
 				else if (_threads.ContainsKey(item))
 				{
-					if (allowAbort)
-					{
-						_threads[item].Abort();
-						_threads.Remove(item);
-						return WorkItemStatus.Aborted;
-					}
-					else
-						return WorkItemStatus.Executing;
+					// Thread.Abort throws PlatformNotSupportedException on .NET 5 and later,
+					// so a running item cannot be stopped, whether or not abort was allowed.
+					return WorkItemStatus.Executing;
 				}
 				else
 					return WorkItemStatus.Completed;
@@ -107,11 +102,7 @@ namespace Aga.Controls.Threading
 			lock (_callbacks)
 			{
 				_callbacks.Clear();
-				if (allowAbort)
-				{
-					foreach (Thread t in _threads.Values)
-						t.Abort();
-				}
+				// Running items are left to finish: Thread.Abort throws on .NET 5 and later.
 			}
 		}
 	}
