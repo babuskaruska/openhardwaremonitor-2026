@@ -67,9 +67,10 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
       clocks = new Sensor[3];
       clocks[0] = new Sensor("GPU Core", 0, SensorType.Clock, this, settings);
       clocks[1] = new Sensor("GPU Memory", 1, SensorType.Clock, this, settings);
-      clocks[2] = new Sensor("GPU Shader", 2, SensorType.Clock, this, settings);
-      for (int i = 0; i < clocks.Length; i++)
-        ActivateSensor(clocks[i]);
+      clocks[2] = new Sensor("GPU Video Engine", 2, SensorType.Clock, this, settings);
+      // The video engine clock is activated once a reading proves it exists.
+      ActivateSensor(clocks[0]);
+      ActivateSensor(clocks[1]);
 
       loads = new Sensor[4];
       loads[0] = new Sensor("GPU Core", 0, SensorType.Load, this, settings);
@@ -169,6 +170,56 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
       return coolers;
     }
 
+    /// <summary>
+    /// Current GPU clocks. Prefers the documented GetAllClockFrequencies; the
+    /// undocumented GetAllClocks remains only as a fallback for old drivers.
+    /// Its third reading, labelled "GPU Shader", came from undocumented array
+    /// offsets and reads 0 on current GPUs, so the third sensor now reports the
+    /// video engine clock instead.
+    /// </summary>
+    private void UpdateClocks() {
+      if (TryGetClockFrequencies(out NvClockFrequencies frequencies)) {
+        SetClock(clocks[0], frequencies, NvPublicClock.Graphics);
+        SetClock(clocks[1], frequencies, NvPublicClock.Memory);
+        if (SetClock(clocks[2], frequencies, NvPublicClock.Video))
+          ActivateSensor(clocks[2]);
+        return;
+      }
+
+      uint[] values = GetClocks();
+      if (values != null) {
+        clocks[1].Value = 0.001f * values[8];
+        clocks[0].Value = values[30] != 0
+          ? 0.0005f * values[30] : 0.001f * values[0];
+      }
+    }
+
+    private static bool SetClock(Sensor sensor, NvClockFrequencies frequencies,
+      NvPublicClock clock) {
+      NvClockFrequencyEntry entry = frequencies.Entries[(int)clock];
+      if (!entry.IsPresent) {
+        sensor.Value = null;
+        return false;
+      }
+      sensor.Value = 0.001f * entry.Frequency;   // kHz to MHz
+      return true;
+    }
+
+    private bool TryGetClockFrequencies(out NvClockFrequencies frequencies) {
+      frequencies = new NvClockFrequencies();
+      if (NVAPI.NvAPI_GPU_GetAllClockFrequencies == null)
+        return false;
+      foreach (uint version in new[] { NVAPI.GPU_CLOCK_FREQUENCIES_VER3,
+        NVAPI.GPU_CLOCK_FREQUENCIES_VER2 }) {
+        frequencies.Version = version;
+        frequencies.ClockType = (uint)NvClockType.Current;
+        frequencies.Entries = new NvClockFrequencyEntry[NVAPI.MAX_PUBLIC_CLOCKS];
+        if (NVAPI.NvAPI_GPU_GetAllClockFrequencies(handle, ref frequencies)
+          == NvStatus.OK)
+          return true;
+      }
+      return false;
+    }
     private uint[] GetClocks() {
       NvClocks allClocks = new NvClocks();
       allClocks.Version = NVAPI.GPU_CLOCKS_VER;
@@ -194,17 +245,7 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
         tachReadingOk = true;
       }
 
-      uint[] values = GetClocks();
-      if (values != null) {        
-        clocks[1].Value = 0.001f * values[8];
-        if (values[30] != 0) {
-          clocks[0].Value = 0.0005f * values[30];
-          clocks[2].Value = 0.001f * values[30];
-        } else {
-          clocks[0].Value = 0.001f * values[0];
-          clocks[2].Value = 0.001f * values[14];
-        }
-      }
+      UpdateClocks();
 
       var infoEx = new NvDynamicPstatesInfoEx();
       infoEx.Version = NVAPI.GPU_DYNAMIC_PSTATES_INFO_EX_VER;

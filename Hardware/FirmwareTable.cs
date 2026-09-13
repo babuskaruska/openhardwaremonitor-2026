@@ -35,16 +35,21 @@ namespace OpenHardwareMonitor.Hardware {
         return null;
 
       IntPtr nativeBuffer = Marshal.AllocHGlobal(size);
-      NativeMethods.GetSystemFirmwareTable(provider, table, nativeBuffer, size);
+      try {
+        // Judge success by the returned size. This used to test
+        // GetLastWin32Error() != 0, which a successful call is not obliged to
+        // reset - and that early return also leaked the native buffer.
+        int written = NativeMethods.GetSystemFirmwareTable(provider, table,
+          nativeBuffer, size);
+        if (written <= 0 || written > size)
+          return null;
 
-      if (Marshal.GetLastWin32Error() != 0)
-        return null;
-
-      byte[] buffer = new byte[size];
-      Marshal.Copy(nativeBuffer, buffer, 0, size);
-      Marshal.FreeHGlobal(nativeBuffer);
-
-      return buffer;
+        byte[] buffer = new byte[written];
+        Marshal.Copy(nativeBuffer, buffer, 0, written);
+        return buffer;
+      } finally {
+        Marshal.FreeHGlobal(nativeBuffer);
+      }
     }
 
     public static string[] EnumerateTables(Provider provider) {

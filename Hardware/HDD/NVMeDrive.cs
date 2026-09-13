@@ -296,9 +296,5 @@ namespace OpenHardwareMonitor.Hardware.HDD {
       base.Close();
     }
 
-    public void Traverse(IVisitor visitor) {
-      foreach (ISensor sensor in Sensors)
-        sensor.Accept(visitor);
-    }
   }
 }

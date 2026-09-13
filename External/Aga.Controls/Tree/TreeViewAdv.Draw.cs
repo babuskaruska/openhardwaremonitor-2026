@@ -65,7 +65,7 @@ namespace Aga.Controls.Tree
 
         private void CreateLightGrayPen()
         {
-            _lightGrayPen = new Pen(Color.FromArgb(247, 247, 247));
+            _lightGrayPen = new Pen(Application.IsDarkModeEnabled ? Color.FromArgb(0x3C, 0x3C, 0x3C) : Color.FromArgb(247, 247, 247));
             _lightGrayPen.Width = GetScaledSize(1, false);
         }
 
