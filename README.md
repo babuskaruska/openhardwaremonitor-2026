@@ -37,7 +37,7 @@ unless you install PawnIO (see below). CI fails the build if a `.sys`, `.inf` or
 | Tier | Requires | Provides |
 |---|---|---|
 | **Base** (default) | nothing | CPU name, hybrid topology, per-core load and clock speeds; NVIDIA GPU temperature, load, clocks, memory, power, fan speed and fan control; NVMe health (temperature, wear, spare, errors, data written); per-module memory information; memory usage |
-| **Deep** (optional) | [PawnIO](https://pawnio.eu) | CPU core and package temperatures, CPU package power, motherboard Super I/O sensors (fans, voltages, temperatures) and motherboard fan control |
+| **Deep** (optional) | [PawnIO](https://pawnio.eu), its signed modules, and administrator rights | Intel CPU core and package temperatures; CPU package and core power. Motherboard Super I/O sensors and AMD CPU temperatures are planned but not yet supported through PawnIO |
 
 Base tier needs no driver. The CPU, NVIDIA, NVMe and memory sensors listed
 above are also read without administrator rights. Like the original, the
@@ -46,17 +46,26 @@ SATA SMART data, Deep tier, listening for remote web connections and changing
 fan speeds need it. The NVIDIA driver rejects fan changes from programs
 running without administrator rights.
 
-To enable Deep tier, install PawnIO, a signed driver that is not on the
-blocklist and is used by LibreHardwareMonitor, FanControl and OpenRGB, then
-restart Open Hardware Monitor:
+To enable Deep tier:
 
-```bash
-winget install -e --id namazso.PawnIO
-```
+1. Install PawnIO, a signed driver that is not on the blocklist and is used by
+   LibreHardwareMonitor, FanControl and OpenRGB:
 
-> **Status:** the PawnIO backend is written against PawnIO's documented
-> interface but has **not yet been tested with PawnIO installed**. Treat Deep
-> tier as experimental.
+   ```bash
+   winget install -e --id namazso.PawnIO
+   ```
+
+2. Download the signed modules from the
+   [PawnIO.Modules releases](https://github.com/namazso/PawnIO.Modules/releases)
+   (`release_x_y_z.zip`) and copy the `.bin` files into
+   `%LOCALAPPDATA%\OpenHardwareMonitor\PawnIOModules`. Intel CPUs need
+   `IntelMSR.bin`. The driver checks each module's signature before loading it.
+3. Start Open Hardware Monitor as administrator. By default PawnIO refuses
+   programs without administrator rights.
+
+If Deep tier is still unavailable, `tools/SensorDump` prints the exact reason
+under "Low-level access" (for example a missing module or missing
+administrator rights).
 
 ## What is new compared with 0.9.6
 
@@ -77,8 +86,9 @@ winget install -e --id namazso.PawnIO
   (DDR4/DDR5), speed, rank and voltage per module, including the SMBIOS 3.3
   extended fields. The memory node is named after the kit, for example
   "Corsair 32 GB DDR4-3200".
-- Super I/O: Nuvoton NCT6799D and ITE IT8689E added. **Untested**; they need
-  Deep tier.
+- Super I/O: Nuvoton NCT6799D and ITE IT8689E added. **Untested**, and not yet
+  reachable: PawnIO only offers restricted Super I/O access through its LpcIO
+  module, and the Super I/O code still needs an adapter for it.
 
 **Application**
 - Menus ported to current WinForms controls; per-monitor DPI awareness; a
@@ -168,8 +178,9 @@ checksums to releases tagged `v*`.
 ## Verification status
 
 Tested on an Intel Core i7-14700KF, NVIDIA GeForce RTX 3070, Samsung 990 PRO
-NVMe and Corsair DDR4-3200 memory, running Windows 11 (build 26200), with no
-driver installed:
+NVMe and Corsair DDR4-3200 memory on a Gigabyte B760M GAMING PLUS WIFI DDR4
+board, running Windows 11 (build 26200). Everything except the Deep tier row
+was tested with no driver installed:
 
 | Area | Status |
 |---|---|
@@ -184,7 +195,8 @@ driver installed:
 | Dark theme; web dashboard; localhost-only binding; JSON escaping | ✅ verified |
 | Fan curve engine (interpolation, hysteresis, parsing) | ✅ unit tests |
 | RTX 3070 fan control: Manual 65 % (0 → 1446 RPM), 40 % (→ 402 RPM), back to automatic | ✅ verified (requires administrator) |
-| Deep tier with PawnIO (CPU temperatures, Super I/O, motherboard fans) | ⚠️ not yet tested |
+| Deep tier with PawnIO 2.2.0 and the IntelMSR module, as administrator: P-cores 32–42 °C, E-cores 33 °C, package 40 °C, TjMax 100 °C read from the CPU, package power 37.9 W | ✅ verified |
+| Motherboard sensors and fan control through PawnIO | ⚠️ not yet supported |
 | Remote web access with token; Run On Windows Startup | ⚠️ not yet tested |
 | AMD CPUs and GPUs, Intel Arc, NCT6799D, IT8689E, ARM64 | ⚠️ written from documentation, untested |
 

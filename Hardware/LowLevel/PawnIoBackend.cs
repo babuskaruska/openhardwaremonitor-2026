@@ -18,56 +18,55 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
   /// <summary>
   /// Privileged access through PawnIO.
   ///
-  /// UNVERIFIED. This has been written against PawnIO's published interface
-  /// but has not been exercised against a running driver, because installing
-  /// one requires administrative elevation. Treat the module names and
-  /// exported function names below as the most likely thing to be wrong; they
-  /// are isolated here as constants for exactly that reason. Every failure
-  /// path degrades to "capability unavailable" rather than throwing, so an
-  /// incorrect guess costs the Deep tier, not stability.
+  /// Intel MSR access follows IntelMSR.p from PawnIO.Modules:
+  /// <c>ioctl_read_msr</c> takes [msr] and returns [value], and
+  /// <c>ioctl_write_msr</c> takes [msr, value]. The module only permits a
+  /// whitelist, which includes every register the processor sensors read
+  /// (thermal status, temperature target, perf status, platform info, RAPL).
   ///
-  /// To verify: install PawnIO plus its module package, then confirm that
-  /// processor core temperatures appear.
+  /// The AMD module name and functions are UNVERIFIED.
+  ///
+  /// Port I/O and PCI configuration are deliberately not offered. PawnIO has
+  /// no arbitrary port access: LpcIO.p exposes a Super I/O slot model
+  /// (ioctl_select_slot, ioctl_find_bars, ioctl_pio_inb/outb restricted to
+  /// the chip's register ports and discovered BARs), and no module exposes
+  /// generic PCI configuration space. The Super I/O and AMD code issues raw
+  /// port and PCI operations, so it needs an adapter to that model before
+  /// it can run on PawnIO.
   /// </summary>
   internal sealed class PawnIoBackend : ILowLevelBackend {
 
     // Module blob names, as published by the PawnIO.Modules project.
     private const string IntelMsrModule = "IntelMSR";
     private const string AmdMsrModule = "AMDFamily17";
-    private const string LpcModule = "LpcIO";
 
-    // Exported Pawn function names invoked through pawnio_execute.
     private const string ReadMsrFunction = "ioctl_read_msr";
     private const string WriteMsrFunction = "ioctl_write_msr";
-    private const string ReadPortFunction = "ioctl_read_port";
-    private const string WritePortFunction = "ioctl_write_port";
-    private const string ReadPciFunction = "ioctl_pci_read";
-    private const string WritePciFunction = "ioctl_pci_write";
+
+    // E_ACCESSDENIED: PawnIO only admits administrators by default.
+    private const int AccessDenied = unchecked((int)0x80070005);
 
     private IntPtr msrHandle;
-    private IntPtr lpcHandle;
     private readonly StringBuilder report = new StringBuilder();
-    private bool isOpen;
 
     public string Name {
       get { return "PawnIO"; }
     }
 
     public bool IsOpen {
-      get { return isOpen; }
+      get { return msrHandle != IntPtr.Zero; }
     }
 
     public bool SupportsMsr {
       get { return msrHandle != IntPtr.Zero; }
     }
 
-    // Port I/O and PCI configuration both come from the LPC module.
     public bool SupportsIoPort {
-      get { return lpcHandle != IntPtr.Zero; }
+      get { return false; }
     }
 
     public bool SupportsPciConfig {
-      get { return lpcHandle != IntPtr.Zero; }
+      get { return false; }
     }
 
     public bool TryOpen(out string? errorMessage) {
@@ -75,43 +74,54 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
 
       if (!PawnIOLib.IsInstalled) {
         errorMessage = "PawnIO is not installed.";
-        report.AppendLine("PawnIOLib could not be loaded.");
+        report.AppendLine("PawnIOLib not found or not loadable at " +
+          PawnIOLib.LibraryPath + ".");
         return false;
       }
 
-      report.AppendLine("PawnIO version: 0x" +
-        PawnIOLib.Version.ToString("X8"));
+      report.AppendLine("PawnIOLib " +
+        PawnIOLib.FormatVersion(PawnIOLib.Version) + " at " +
+        PawnIOLib.LibraryPath);
 
-      string msrModule = GetMsrModuleForCurrentProcessor();
-      msrHandle = TryOpenModule(msrModule);
-      lpcHandle = TryOpenModule(LpcModule);
-
-      isOpen = msrHandle != IntPtr.Zero || lpcHandle != IntPtr.Zero;
-      if (!isOpen)
-        errorMessage = "PawnIO is installed but no usable module was loaded.";
-      return isOpen;
+      string module = GetMsrModuleForCurrentProcessor();
+      msrHandle = TryOpenModule(module, out errorMessage);
+      return msrHandle != IntPtr.Zero;
     }
 
-    private IntPtr TryOpenModule(string moduleName) {
-      byte[]? blob = PawnIOLib.TryLoadModuleBlob(moduleName);
+    private IntPtr TryOpenModule(string moduleName, out string? errorMessage) {
+      errorMessage = null;
+
+      byte[]? blob = PawnIOLib.TryLoadModuleBlob(moduleName, out string? path);
       if (blob == null) {
-        report.AppendLine("Module " + moduleName + ": blob not found.");
+        errorMessage = "PawnIO is installed, but the " + moduleName +
+          " module was not found. Place " + moduleName + ".bin from the " +
+          "PawnIO.Modules release in " + PawnIOLib.GetModuleSearchPaths()[1] +
+          ".";
+        report.AppendLine("Module " + moduleName + ": not found in " +
+          string.Join("; ", PawnIOLib.GetModuleSearchPaths()));
         return IntPtr.Zero;
       }
 
-      if (!PawnIOLib.TryOpen(out IntPtr handle)) {
-        report.AppendLine("Module " + moduleName + ": driver open failed.");
+      if (!PawnIOLib.TryOpen(out IntPtr handle, out int openResult)) {
+        errorMessage = openResult == AccessDenied
+          ? "PawnIO requires Open Hardware Monitor to run as administrator."
+          : "The PawnIO driver could not be opened (0x" +
+            openResult.ToString("X8") + ").";
+        report.AppendLine("Module " + moduleName + ": driver open failed, 0x" +
+          openResult.ToString("X8"));
         return IntPtr.Zero;
       }
 
-      if (!PawnIOLib.TryLoad(handle, blob)) {
-        report.AppendLine("Module " + moduleName + ": load rejected " +
-          "(signature or version mismatch).");
+      if (!PawnIOLib.TryLoad(handle, blob, out int loadResult)) {
+        errorMessage = "PawnIO rejected the " + moduleName + " module (0x" +
+          loadResult.ToString("X8") + ").";
+        report.AppendLine("Module " + moduleName + " from " + path +
+          ": load rejected, 0x" + loadResult.ToString("X8"));
         PawnIOLib.Close(handle);
         return IntPtr.Zero;
       }
 
-      report.AppendLine("Module " + moduleName + ": loaded.");
+      report.AppendLine("Module " + moduleName + ": loaded from " + path);
       return handle;
     }
 
@@ -149,49 +159,21 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
 
     public bool TryReadIoPort(uint port, out byte value) {
       value = 0xFF;
-      if (lpcHandle == IntPtr.Zero)
-        return false;
-
-      ulong[] input = { port };
-      ulong[] output = new ulong[1];
-      if (!PawnIOLib.TryExecute(lpcHandle, ReadPortFunction, input, output))
-        return false;
-
-      value = (byte)(output[0] & 0xFF);
-      return true;
+      return false;
     }
 
     public bool WriteIoPort(uint port, byte value) {
-      if (lpcHandle == IntPtr.Zero)
-        return false;
-
-      ulong[] input = { port, value };
-      return PawnIOLib.TryExecute(lpcHandle, WritePortFunction, input,
-        Array.Empty<ulong>());
+      return false;
     }
 
     public bool ReadPciConfig(uint pciAddress, uint regAddress,
       out uint value) {
       value = 0;
-      if (lpcHandle == IntPtr.Zero || (regAddress & 3) != 0)
-        return false;
-
-      ulong[] input = { pciAddress, regAddress };
-      ulong[] output = new ulong[1];
-      if (!PawnIOLib.TryExecute(lpcHandle, ReadPciFunction, input, output))
-        return false;
-
-      value = (uint)(output[0] & 0xFFFFFFFF);
-      return true;
+      return false;
     }
 
     public bool WritePciConfig(uint pciAddress, uint regAddress, uint value) {
-      if (lpcHandle == IntPtr.Zero || (regAddress & 3) != 0)
-        return false;
-
-      ulong[] input = { pciAddress, regAddress, value };
-      return PawnIOLib.TryExecute(lpcHandle, WritePciFunction, input,
-        Array.Empty<ulong>());
+      return false;
     }
 
     public string GetReport() {
@@ -203,11 +185,6 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
         PawnIOLib.Close(msrHandle);
         msrHandle = IntPtr.Zero;
       }
-      if (lpcHandle != IntPtr.Zero) {
-        PawnIOLib.Close(lpcHandle);
-        lpcHandle = IntPtr.Zero;
-      }
-      isOpen = false;
     }
   }
 }

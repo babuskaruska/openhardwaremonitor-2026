@@ -72,8 +72,18 @@ namespace OpenHardwareMonitor.Hardware {
     /// </summary>
     public static string? UnavailableReason {
       get {
-        if (Tier == AccessTier.Deep)
-          return null;
+        if (Tier == AccessTier.Deep) {
+          if (Ring0.SupportsIoPort)
+            return null;
+          return "Motherboard fan and voltage sensors are not yet " +
+            "supported through PawnIO.";
+        }
+
+        string? error = Ring0.BackendError;
+        if (LowLevel.PawnIOLib.IsInstalled && !string.IsNullOrEmpty(error))
+          return "Processor core temperatures and package power are " +
+            "unavailable. " + error;
+
         return "Processor core temperatures, package power and motherboard " +
           "fan and voltage sensors require a low-level driver. Install " +
           "PawnIO to enable them (" + InstallCommand + "). Everything else " +

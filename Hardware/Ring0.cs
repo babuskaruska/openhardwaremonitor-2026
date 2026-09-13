@@ -51,6 +51,13 @@ namespace OpenHardwareMonitor.Hardware {
       OpenBusMutexes();
     }
 
+    /// <summary>
+    /// Why PawnIO could not be used, or null when it is active. Lets the user
+    /// interface give the actual reason (module missing, not elevated) rather
+    /// than a generic installation hint.
+    /// </summary>
+    public static string? BackendError { get; private set; }
+
     private static void OpenBackend() {
       if (backend.IsOpen && !(backend is NullBackend))
         return;
@@ -58,13 +65,16 @@ namespace OpenHardwareMonitor.Hardware {
       PawnIoBackend pawnIo = new PawnIoBackend();
       if (pawnIo.TryOpen(out string? error)) {
         backend = pawnIo;
+        BackendError = null;
         report.AppendLine("Backend: " + pawnIo.Name);
         report.Append(pawnIo.GetReport());
         return;
       }
 
-      pawnIo.Dispose();
+      BackendError = error;
       report.AppendLine("Backend: none");
+      report.Append(pawnIo.GetReport());
+      pawnIo.Dispose();
       if (!string.IsNullOrEmpty(error))
         report.AppendLine(error);
       backend = new NullBackend();
