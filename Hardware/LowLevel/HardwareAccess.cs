@@ -25,8 +25,11 @@ namespace OpenHardwareMonitor.Hardware {
     Base,
 
     /// <summary>
-    /// A low-level backend is active, additionally allowing processor core
-    /// temperatures, package power, and motherboard fan and voltage sensors.
+    /// A low-level backend is active. Depending on which of its modules
+    /// loaded, this additionally allows processor core temperatures and
+    /// package power, and motherboard fan, voltage and temperature sensors.
+    /// <see cref="HardwareAccess.UnavailableReason"/> names anything that is
+    /// still missing.
     /// </summary>
     Deep
   }
@@ -58,6 +61,12 @@ namespace OpenHardwareMonitor.Hardware {
       get { return Ring0.SupportsMsr; }
     }
 
+    /// <summary>
+    /// True when motherboard Super I/O chips can be reached, which their fan,
+    /// voltage and temperature sensors need. Through PawnIO this is not
+    /// general port access: only the chips' configuration ports and the
+    /// address ranges its LpcIO module discovered for them are allowed.
+    /// </summary>
     public static bool SupportsIoPort {
       get { return Ring0.SupportsIoPort; }
     }
@@ -73,22 +82,37 @@ namespace OpenHardwareMonitor.Hardware {
     public static string? UnavailableReason {
       get {
         if (Tier == AccessTier.Deep) {
-          if (Ring0.SupportsIoPort)
-            return null;
-          return "Motherboard fan and voltage sensors are not yet " +
-            "supported through PawnIO.";
+          string? processor = Ring0.SupportsMsr ? null : Explain(
+            "Processor core temperatures and package power are unavailable.",
+            Ring0.MsrError);
+          string? motherboard = Ring0.SupportsIoPort ? null : Explain(
+            "Motherboard fan, voltage and temperature sensors are " +
+            "unavailable.", Ring0.IoPortError);
+          return Join(processor, motherboard);
         }
 
         string? error = Ring0.BackendError;
         if (LowLevel.PawnIOLib.IsInstalled && !string.IsNullOrEmpty(error))
-          return "Processor core temperatures and package power are " +
-            "unavailable. " + error;
+          return "Processor core temperatures, package power and motherboard " +
+            "sensors are unavailable. " + error;
 
         return "Processor core temperatures, package power and motherboard " +
           "fan and voltage sensors require a low-level driver. Install " +
           "PawnIO to enable them (" + InstallCommand + "). Everything else " +
           "is available without it.";
       }
+    }
+
+    private static string Explain(string what, string? why) {
+      return string.IsNullOrEmpty(why) ? what : what + " " + why;
+    }
+
+    private static string? Join(string? first, string? second) {
+      if (first == null)
+        return second;
+      if (second == null)
+        return first;
+      return first + " " + second;
     }
   }
 }

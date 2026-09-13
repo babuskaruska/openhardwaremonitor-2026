@@ -58,6 +58,23 @@ namespace OpenHardwareMonitor.Hardware {
     /// </summary>
     public static string? BackendError { get; private set; }
 
+    /// <summary>
+    /// Why model specific registers are unavailable although the backend is
+    /// active, or null. PawnIO loads a module per capability, so one can be
+    /// missing while another works.
+    /// </summary>
+    public static string? MsrError {
+      get { return (backend as PawnIoBackend)?.MsrError; }
+    }
+
+    /// <summary>
+    /// Why motherboard Super I/O port access is unavailable although the
+    /// backend is active, or null.
+    /// </summary>
+    public static string? IoPortError {
+      get { return (backend as PawnIoBackend)?.LpcIoError; }
+    }
+
     private static void OpenBackend() {
       if (backend.IsOpen && !(backend is NullBackend))
         return;
@@ -241,6 +258,36 @@ namespace OpenHardwareMonitor.Hardware {
 
     public static bool WriteIoPort(uint port, byte value) {
       return backend.WriteIoPort(port, value);
+    }
+
+    /// <summary>
+    /// Super I/O detection calls this once the chip at
+    /// <paramref name="registerPort"/> is in configuration mode and has
+    /// returned a valid chip ID, before it leaves configuration mode.
+    ///
+    /// PawnIO only allows port access to a Super I/O chip's address ranges
+    /// after its LpcIO module has discovered them, which in turn needs
+    /// configuration mode. Backends without that restriction do nothing.
+    /// Returns true when the chip's ranges were made accessible.
+    /// </summary>
+    public static bool PrepareSuperIoAccess(ushort registerPort) {
+      bool prepared = backend.PrepareSuperIoAccess(registerPort,
+        out string? detail);
+      if (!string.IsNullOrEmpty(detail))
+        report.AppendLine(detail);
+      return prepared;
+    }
+
+    /// <summary>
+    /// Replaces the active backend and returns the previous one, without
+    /// opening, closing or disposing either. For unit tests only.
+    /// </summary>
+    internal static ILowLevelBackend SetBackendForTesting(
+      ILowLevelBackend replacement) {
+      ILowLevelBackend previous = backend;
+      backend = replacement ??
+        throw new ArgumentNullException(nameof(replacement));
+      return previous;
     }
 
     // ---- PCI configuration space --------------------------------------------
