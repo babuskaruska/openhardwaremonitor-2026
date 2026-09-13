@@ -363,6 +363,46 @@ namespace OpenHardwareMonitor.Hardware {
       open = false;
     }
 
+    /// <summary>
+    /// Writes the recorded history of every sensor to the settings. Sensors
+    /// otherwise write it only when their hardware closes, so without this a
+    /// crash or power cut would lose the whole run.
+    ///
+    /// Safe to call from any thread. <paramref name="sync"/> must be the lock
+    /// held around every update: each sensor is copied under it, one at a
+    /// time, and compressed outside it, so updates are held up by no more
+    /// than a memory copy.
+    /// </summary>
+    public void SaveSensorHistory(object sync) {
+      if (sync == null)
+        throw new ArgumentNullException("sync");
+
+      List<Sensor> sensors = new List<Sensor>();
+      lock (sync) {
+        Accept(new SensorVisitor(delegate(ISensor sensor) {
+          Sensor recorded = sensor as Sensor;
+          if (recorded != null)
+            sensors.Add(recorded);
+        }));
+      }
+
+      SensorValue[] buffer = new SensorValue[0];
+      foreach (Sensor sensor in sensors) {
+        int count;
+        lock (sync) {
+          if (sensor.IsClosed)
+            continue;
+          count = sensor.CopyValues(ref buffer);
+        }
+        string encoded = SensorHistory.Encode(buffer, count, sensor.SensorType);
+        lock (sync) {
+          // Closing wrote a newer history in the meantime.
+          if (!sensor.IsClosed)
+            sensor.StoreHistory(encoded);
+        }
+      }
+    }
+
     private void RemoveGroups() {
       while (groups.Count > 0) {
         IGroup group = groups[groups.Count - 1];

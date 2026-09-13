@@ -165,6 +165,7 @@ namespace OpenHardwareMonitor.GUI {
         fansPage.UpdateValues();
       if (settingsPage != null && settingsPage.Visible)
         settingsPage.RefreshValues();
+      UpdateHistoryPage();
     }
 
     protected override void OnHandleCreated(EventArgs e) {
@@ -200,6 +201,8 @@ namespace OpenHardwareMonitor.GUI {
     }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData) {
+      if (ProcessHistoryKey(keyData))
+        return true;
       // Leave Escape to an in-place sensor rename, which hosts an editor
       // inside the tree.
       bool editing = treeView.ContainsFocus && !treeView.Focused;

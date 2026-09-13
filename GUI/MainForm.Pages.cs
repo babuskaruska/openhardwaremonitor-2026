@@ -105,9 +105,9 @@ namespace OpenHardwareMonitor.GUI {
       if (index == currentPage && pages[index].Visible)
         return;
 
-      Control from = pages[currentPage];
+      Control from = VisibleHistoryPage ?? pages[currentPage];
       Control to = pages[index];
-      bool forward = index > currentPage;
+      bool forward = index > currentPage && from == pages[currentPage];
       currentPage = index;
 
       if (to == fansPage)
@@ -129,7 +129,8 @@ namespace OpenHardwareMonitor.GUI {
       menu.Items.Add(new ToolStripMenuItem("Reset minimum and maximum values", null,
         delegate { resetMinMaxMenuItem_Click(this, EventArgs.Empty); }));
       menu.Items.Add(new ToolStripSeparator());
-      menu.Items.Add(CheckItem("Show plot", showPlot.Value, value => showPlot.Value = value));
+      menu.Items.Add(new ToolStripMenuItem("Sensor history", null,
+        delegate { ShowHistoryFromMenu(); }));
       if (gadget != null)
         menu.Items.Add(CheckItem("Show desktop gadget", showGadget.Value,
           value => showGadget.Value = value));

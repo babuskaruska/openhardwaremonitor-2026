@@ -111,6 +111,9 @@ namespace OpenHardwareMonitor.GUI.Modern {
 
     public event EventHandler? ExportRequested;
 
+    /// <summary>Raised with the sensor behind a card's trend when the trend is clicked.</summary>
+    public event EventHandler<ISensor>? HistoryRequested;
+
     public bool ShowExportButton {
       get { return header.ShowExport; }
       set { header.ShowExport = value; }
@@ -268,6 +271,11 @@ namespace OpenHardwareMonitor.GUI.Modern {
       SensorCard card = new SensorCard { Theme = theme, TabIndex = slots.Count };
       CardSlot slot = new CardSlot(card, build, target);
       card.MoreInfoClicked += delegate { DetailsRequested?.Invoke(this, slot.Target); };
+      card.TrendClicked += delegate {
+        ISensor? sensor = card.Model.TrendSensor;
+        if (sensor != null)
+          HistoryRequested?.Invoke(this, sensor);
+      };
       card.MouseWheel += OnCardMouseWheel;
       slots.Add(slot);
       host.Controls.Add(card);
@@ -476,6 +484,7 @@ namespace OpenHardwareMonitor.GUI.Modern {
       model.HeroLabel = label;
       model.HeroSeverity = severity;
       model.Trend = Trend(trend);
+      model.TrendSensor = trend;
       model.TrendLabel = "Last 5 minutes";
     }
 
@@ -488,6 +497,7 @@ namespace OpenHardwareMonitor.GUI.Modern {
       model.HeroLabel = label;
       model.HeroSeverity = severity;
       model.Trend = Trend(trend);
+      model.TrendSensor = trend;
       model.TrendLabel = "Last 5 minutes";
     }
 

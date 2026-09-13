@@ -11,8 +11,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
-using System.IO.Compression;
 using OpenHardwareMonitor.Collections;
 
 namespace OpenHardwareMonitor.Hardware {
@@ -69,58 +67,59 @@ namespace OpenHardwareMonitor.Hardware {
       GetSensorValuesFromSettings();      
 
       hardware.Closing += delegate(IHardware h) {
-        SetSensorValuesToSettings();
+        SensorValue[] copy = new SensorValue[values.Count];
+        values.CopyTo(copy, 0);
+        StoreHistory(SensorHistory.Encode(copy, copy.Length, sensorType));
+        closed = true;
       };
     }
 
-    private void SetSensorValuesToSettings() {
-      using (MemoryStream m = new MemoryStream()) {
-        using (GZipStream c = new GZipStream(m, CompressionMode.Compress))
-        using (BufferedStream b = new BufferedStream(c, 65536))
-        using (BinaryWriter writer = new BinaryWriter(b)) {
-          long t = 0;
-          foreach (SensorValue sensorValue in values) {
-            long v = sensorValue.Time.ToBinary();
-            writer.Write(v - t);
-            t = v;
-            writer.Write(sensorValue.Value);
-          }
-          writer.Flush();
-        }
-        settings.SetValue(new Identifier(Identifier, "values").ToString(),
-          Convert.ToBase64String(m.ToArray()));
-      }
+    private bool closed;
+
+    /// <summary>
+    /// True once the hardware has closed and written the final history.
+    /// Read under the hardware lock.
+    /// </summary>
+    internal bool IsClosed {
+      get { return closed; }
+    }
+
+    /// <summary>
+    /// Copies the samples into <paramref name="buffer"/>, growing it when
+    /// needed, and returns how many there are. Call under the hardware lock.
+    /// </summary>
+    internal int CopyValues(ref SensorValue[] buffer) {
+      if (buffer == null || buffer.Length < values.Count)
+        buffer = new SensorValue[values.Count + values.Count / 8 + 16];
+      values.CopyTo(buffer, 0);
+      return values.Count;
+    }
+
+    /// <summary>Stores a string from <see cref="SensorHistory.Encode"/>.</summary>
+    internal void StoreHistory(string encoded) {
+      string name = new Identifier(Identifier, "values").ToString();
+      if (string.IsNullOrEmpty(encoded))
+        settings.Remove(name);
+      else
+        settings.SetValue(name, encoded);
     }
 
     private void GetSensorValuesFromSettings() {
       string name = new Identifier(Identifier, "values").ToString();
-      string s = settings.GetValue(name, null);
-
-      try {
-        byte[] array = Convert.FromBase64String(s);
-        s = null;
-        DateTime now = DateTime.UtcNow;
-        using (MemoryStream m = new MemoryStream(array))
-        using (GZipStream c = new GZipStream(m, CompressionMode.Decompress))
-        using (BinaryReader reader = new BinaryReader(c)) {
-          try {
-            long t = 0;
-            while (true) {
-              t += reader.ReadInt64();
-              DateTime time = DateTime.FromBinary(t);
-              if (time > now)
-                break;
-              float value = reader.ReadSingle();
-              AppendValue(value, time);
-            }
-          } catch (EndOfStreamException) { }
-        }
-      } catch { }
+      DateTime now = DateTime.UtcNow;
+      DateTime oldest = now - SensorHistory.Retention;
+      foreach (SensorValue value in SensorHistory.Decode(settings.GetValue(name, null))) {
+        if (value.Time > now)
+          break;
+        if (value.Time >= oldest)
+          AppendValue(value.Value, value.Time);
+      }
       if (values.Count > 0)
-        AppendValue(float.NaN, DateTime.UtcNow);
+        AppendValue(float.NaN, now);
 
-      // remove the value string from the settings to reduce memory usage
-      settings.Remove(name);
+      // The stored string stays in the settings. It used to be removed to save
+      // memory, but the settings are now also saved while running, and a save
+      // before this sensor next writes its history would have dropped it.
     }
 
     private void AppendValue(float value, DateTime time) {
@@ -180,13 +179,13 @@ namespace OpenHardwareMonitor.Hardware {
       }
       set {
         DateTime now = DateTime.UtcNow;
-        while (values.Count > 0 && (now - values.First.Time).TotalDays > 1)
+        while (values.Count > 0 && now - values.First.Time > SensorHistory.Retention)
           values.Remove();
 
         if (value.HasValue) {
           sum += value.Value;
           count++;
-          if (count == 4) {
+          if (count == SensorHistory.ReadingsPerSample) {
             AppendValue(sum / count, now);
             sum = 0;
             count = 0;
