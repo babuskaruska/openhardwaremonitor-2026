@@ -623,6 +623,7 @@ namespace OpenHardwareMonitor.GUI.Modern {
 
     public ButtonKind Kind { get; set; } = ButtonKind.Secondary;
 
+    [System.Diagnostics.CodeAnalysis.AllowNull]
     public override string Text {
       get { return base.Text; }
       set {

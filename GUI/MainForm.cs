@@ -187,11 +187,11 @@ namespace OpenHardwareMonitor.GUI {
       computer.HardwareAdded += new HardwareEventHandler(HardwareAdded);
       computer.HardwareRemoved += new HardwareEventHandler(HardwareRemoved);        
 
-      computer.Open();
+      // Detecting hardware takes from half a second to several seconds, so the
+      // computer is opened on the sensor thread once the window exists.
+      CreateSensorPoller();
 
       Microsoft.Win32.SystemEvents.PowerModeChanged += PowerModeChanged;
-
-      StartSensorPolling();
 
       showHiddenSensors = new UserOption("hiddenMenuItem", false,
         hiddenMenuItem, settings);
@@ -418,14 +418,24 @@ namespace OpenHardwareMonitor.GUI {
         Show();
       }
 
+      InitializePages();
+
       // Create a handle, otherwise calling Close() does not fire FormClosed     
       IntPtr handle = Handle;
+
+      // Sensors are polled only once the window is fully built. Starting earlier
+      // made every sensor option above wait for the first update to release
+      // the hardware lock, which delayed the window by several seconds.
+      StartSensorPolling();
 
       // Make sure the settings are saved when the user logs off
       Microsoft.Win32.SystemEvents.SessionEnded += delegate {
         StopSensorPolling();
-        fanCurves.Release();
-        computer.Close();
+        // Waits for the sensor thread if it is still opening the hardware.
+        poller.RunLocked(() => {
+          fanCurves.Release();
+          computer.Close();
+        });
         SaveConfiguration();
         if (runWebServer.Value) 
           server.Quit();
@@ -557,12 +567,17 @@ namespace OpenHardwareMonitor.GUI {
         SubHardwareAdded(subHardware, hardwareNode);  
     }
 
-    private void HardwareAdded(IHardware hardware) {      
+    private void HardwareAdded(IHardware hardware) {
+      // Raised on the sensor thread while it opens the hardware.
+      if (UiThread.Redirect(() => HardwareAdded(hardware)))
+        return;
       SubHardwareAdded(hardware, root);
       PlotSelectionChanged(this, null);
     }
 
     private void HardwareRemoved(IHardware hardware) {
+      if (UiThread.Redirect(() => HardwareRemoved(hardware)))
+        return;
       List<HardwareNode> nodesToRemove = new List<HardwareNode>();
       foreach (Node node in root.Nodes) {
         HardwareNode hardwareNode = node as HardwareNode;
@@ -754,8 +769,11 @@ namespace OpenHardwareMonitor.GUI {
       systemTray.IsMainIconEnabled = false;
       timer.Enabled = false;            
       StopSensorPolling();
-      fanCurves.Release();
-      computer.Close();
+      // Waits for the sensor thread if it is still opening the hardware.
+      poller.RunLocked(() => {
+        fanCurves.Release();
+        computer.Close();
+      });
       SaveConfiguration();
       if (runWebServer.Value)
           server.Quit();

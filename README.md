@@ -96,32 +96,70 @@ administrator rights).
   - Nuvoton NCT6799D was added but is untested.
 
 **Application**
-- **A new interface.** The window opens on an overview:
-  - one card each for the CPU, GPU, memory, motherboard and storage, showing
-    the readings that matter;
-  - a five-minute trend, and colour cues when something runs warm or hot.
+- **A new interface** with four pages along the top (Ctrl+1 to Ctrl+4):
+  - **Overview:** one card each for the CPU, GPU, memory, motherboard and
+    storage, with the readings that matter, a five-minute trend and colour
+    cues when something runs warm or hot. **More info** on a card opens its
+    sensors.
+  - **Sensors:** the full sensor list, without grid or tree lines and with
+    vector icons. Esc returns to the overview.
+  - **Fans:** every controllable fan with its current speed and a choice of
+    **Automatic**, **Fixed speed** (a slider) or **Curve** (see below).
+  - **Settings:** every option on one page, grouped into General, Appearance,
+    Sensors, Logging, Web server, Hardware access, and Diagnostics and about.
 
-  **More info** (or Ctrl+2) opens the full sensor list, now without grid or
-  tree lines and with vector icons; Esc returns to the overview. Light and
-  dark themes (Options → Theme), crisp at any display scaling. Motion is
-  subtle and follows the Windows animation effects setting:
+  The ⋯ button holds the less common actions: technical report, reset
+  minimum and maximum, plot, desktop gadget, hidden sensors, rescan hardware,
+  about and exit. Light and dark themes, crisp at any display scaling. Motion
+  is subtle, follows the Windows animation effects setting and can be turned
+  off under Settings → Appearance:
   - cards ease in and lift under the pointer;
   - readings and bars move smoothly to new values;
-  - the two views cross-fade.
+  - pages cross-fade.
+- **Fast and light:** sensors are read on a background thread, so the window
+  never waits for hardware (see [Performance](#performance)).
 - **Export for AI:** a diagnostics snapshot in one click (see below).
-- **Fan curves:** right-click a controllable fan sensor, then Control →
-  Curve… to drive it from any temperature sensor (details below).
 - Settings are stored in `%LOCALAPPDATA%\OpenHardwareMonitor\`, not next to the
   executable. Logs are in `%LOCALAPPDATA%\OpenHardwareMonitor\Logs`
-  (Options → Open Log Folder).
-- Only one instance runs at a time; Options → Run On Windows Startup starts it
-  with Windows.
+  (Settings → Logging → Log folder).
+- Only one instance runs at a time. Settings → General → Start with Windows
+  starts it when you sign in, and Settings → Hardware access → Restart as
+  administrator enables the sensors and fan control that need it.
 - The legacy WMI provider has been removed: its API does not exist on modern .NET.
+
+## Performance
+
+Hardware is read on a dedicated background thread; the window never waits for
+it. Measured on the test PC described under Verification status, using the
+published executable without administrator rights:
+
+| Measurement | Result |
+|---|---|
+| Window visible after launch | 0.56 s; hardware detection continues in the background and the overview shows "Detecting hardware…" meanwhile |
+| One update of every sensor | 5–30 ms, on the sensor thread |
+| Idle CPU with the window open | 1–5 % of one core depending on the page, less when minimised |
+| UI thread response while sensors update | median 0.3 ms, worst 1.5 ms |
+| Moving the window | worst frame 2.8 ms, none over 16 ms |
+| Closing | under 0.1 s |
+
+What made the difference:
+- Sensor updates moved off the UI thread. They used to block it for up to a
+  few hundred milliseconds every second, which made dragging the window stutter.
+- Per-core clocks are read with one PDH query instead of 28 .NET
+  `PerformanceCounter` objects, which cost 0.4 s on every start and about 5 s
+  after a cold boot.
+- Drive letters come from each volume's disk extents instead of WMI (0.7 s).
+- Hardware detection itself runs on the sensor thread.
+- Overview cards cache their static artwork and repaint only what changed.
+  Animations run only while something moves and pause while the window is
+  being dragged.
+- The published executable is precompiled (ReadyToRun).
 
 ## Fan curves
 
-A curve maps a temperature to a fan duty cycle using linear interpolation
-between the points you enter.
+On the **Fans** page, choose **Curve** for a fan to drive it from any
+temperature sensor. A curve maps the temperature to a fan duty cycle using
+linear interpolation between the points you enter.
 
 - **Hysteresis:** 3 °C by default, so a fan does not hunt up and down around a
   point.
@@ -131,7 +169,7 @@ between the points you enter.
   updates, the fan is returned to automatic (hardware) control.
 - **On exit, including after a crash**, every fan a curve was driving is
   handed back to automatic control.
-- Choosing Control → Default or a fixed Manual level removes the curve.
+- Choosing **Automatic** or **Fixed speed** for the fan removes the curve.
 
 For NVIDIA GPUs, Open Hardware Monitor returns the fans to automatic control on
 exit only if it changed them during that session. That way it does not
@@ -139,8 +177,8 @@ override another utility, such as MSI Afterburner, that is managing the fans.
 
 ## Export for AI
 
-**Export for AI** (the button on the overview, the menu bar item, File → Export
-Diagnostics, or the tray menu) saves a diagnostics snapshot in one click. It
+**Export for AI** (the button in the top bar, Ctrl+E, Settings → Diagnostics
+and about, or the tray menu) saves a diagnostics snapshot in one click. It
 writes two files to `Documents\OpenHardwareMonitor\Diagnostics`:
 `OHM-diagnostics-<date>-<time>.md` and `.json`. The Markdown is copied to the
 clipboard, ready to paste into an AI assistant, and Explorer opens with the
@@ -168,8 +206,9 @@ dotnet run --project tools/SensorDump/SensorDump.csproj -c Release -- --export <
 
 ## Web server and JSON API
 
-Options → Web Server → Run starts a local web server with a live dashboard at
-`http://localhost:8085/`. The port can be changed under Web Server → Port.
+Settings → Web server → Run the web server starts a local web server with a
+live dashboard at `http://localhost:8085/`. The port can be changed under
+Settings → Web server → Port and connection link.
 
 | Endpoint | Description |
 |---|---|
@@ -180,10 +219,11 @@ Options → Web Server → Run starts a local web server with a live dashboard a
 
 Security defaults:
 - The server listens on **localhost only**.
-- **Remote access is opt-in** (Web Server → Allow Remote Connections). Remote
-  clients must present an access token (`?token=…`); the link containing the
-  token is shown under Web Server → Port. Listening on all interfaces requires
-  running Open Hardware Monitor as administrator.
+- **Remote access is opt-in** (Settings → Web server → Allow connections from
+  other devices). Remote clients must present an access token (`?token=…`);
+  the link containing the token is shown under Settings → Web server → Port
+  and connection link. Listening on all interfaces requires running Open
+  Hardware Monitor as administrator.
 - JSON is generated with a real JSON writer, so sensor names cannot inject
   script. The dashboard is served with a strict Content Security Policy and
   only from a fixed list of embedded files.
@@ -201,7 +241,8 @@ dotnet test tests/OpenHardwareMonitor.Tests/OpenHardwareMonitor.Tests.csproj -c 
 ```
 
 Self-contained single-file build. The output goes to `artifacts/publish/win-x64/`;
-it runs on a PC without .NET installed:
+it runs on a PC without .NET installed and is precompiled (ReadyToRun), so it
+starts quickly:
 
 ```bash
 dotnet publish OpenHardwareMonitor.csproj -c Release -p:PublishProfile=SelfContained-win-x64
@@ -239,6 +280,8 @@ was tested with no driver installed:
 | RTX 3070 temperature, load, clocks, memory, power, fan speed | ✅ verified |
 | Memory module names and details from SMBIOS | ✅ verified |
 | New interface (overview, sensor list, light and dark themes), rendered from the real sensors | ✅ verified |
+| Overview, Sensors, Fans and Settings pages in the running application, light and dark | ✅ verified |
+| Performance figures above, measured on the published executable | ✅ verified |
 | Export for AI through SensorDump, including a real finding (NVMe media errors on a test drive) | ✅ verified |
 | Web dashboard; localhost-only binding; JSON escaping | ✅ verified |
 | Fan curve engine (interpolation, hysteresis, parsing) | ✅ unit tests |
@@ -246,6 +289,7 @@ was tested with no driver installed:
 | Deep tier with PawnIO 2.2.0 and the IntelMSR module, as administrator: P-cores 32–42 °C, E-cores 33 °C, package 40 °C, TjMax 100 °C read from the CPU, package power 37.9 W | ✅ verified |
 | Motherboard sensors through PawnIO (ITE IT8689E, Gigabyte B760M GAMING PLUS WIFI DDR4): +12V 11.95 V, +5V 5.13 V, +3.3V 3.36 V, VBat 3.05 V, six temperatures, two fans | ✅ verified |
 | Motherboard fan control (writing fan speeds) | ⚠️ not yet tested on hardware |
+| Changing fan modes on the Fans page (no fan speeds were written while testing the page) | ⚠️ not yet tested on hardware |
 | Remote web access with token; Run On Windows Startup | ⚠️ not yet tested |
 | AMD CPUs and GPUs, Intel Arc, NCT6799D, other Super I/O boards through PawnIO, ARM64 | ⚠️ written from documentation, untested |
 

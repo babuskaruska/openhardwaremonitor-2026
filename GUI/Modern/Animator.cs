@@ -57,14 +57,23 @@ namespace OpenHardwareMonitor.GUI.Modern {
 
   /// <summary>
   /// One frame clock for the whole interface. It only ticks while something
-  /// is moving, so an idle window costs nothing, and it honours the Windows
-  /// "Animation effects" setting.
+  /// is moving, so an idle window costs nothing; it honours the Windows
+  /// "Animation effects" setting and the app's own animation setting.
   /// </summary>
   public static class Animator {
 
     private static readonly List<Func<bool>> active = new List<Func<bool>>();
     private static readonly Stopwatch clock = Stopwatch.StartNew();
     private static Timer? timer;
+
+    // For measuring and troubleshooting: OHM_ANIMATIONS=0 turns motion off.
+    private static readonly bool disabledByEnvironment = string.Equals(
+      Environment.GetEnvironmentVariable("OHM_ANIMATIONS"), "0", StringComparison.Ordinal);
+
+    // The Windows setting is read at most every two seconds; Enabled is
+    // consulted every time a value changes.
+    private static double systemCheckedAt = double.NegativeInfinity;
+    private static bool systemEnabled = true;
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SystemParametersInfo(uint action, uint param,
@@ -78,26 +87,44 @@ namespace OpenHardwareMonitor.GUI.Modern {
     }
 
     /// <summary>
-    /// False when the user turned off animation effects in Windows settings
-    /// (Accessibility, Visual effects). Motion then jumps to its end state.
+    /// False when motion is off: the Windows animation effects setting, the
+    /// app setting, or rendering a still. Values then jump to their targets.
     /// </summary>
     public static bool Enabled {
       get {
-        if (ForceDisabled)
+        if (ForceDisabled || UserDisabled || disabledByEnvironment)
           return false;
-        try {
-          bool enabled = true;
-          if (SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, ref enabled, 0))
-            return enabled;
-        } catch (Exception) {
-          // Fall through to the default.
+        double now = Now;
+        if (now - systemCheckedAt > 2) {
+          systemCheckedAt = now;
+          try {
+            bool enabled = true;
+            systemEnabled = SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, ref enabled, 0)
+              ? enabled : SystemInformation.UIEffectsEnabled;
+          } catch (Exception) {
+            systemEnabled = true;
+          }
         }
-        return SystemInformation.UIEffectsEnabled;
+        return systemEnabled;
       }
     }
 
     /// <summary>For rendering stills (screenshots) without motion.</summary>
     public static bool ForceDisabled { get; set; }
+
+    /// <summary>The user turned animations off in Settings.</summary>
+    public static bool UserDisabled { get; set; }
+
+    /// <summary>
+    /// Holds every animation, for example while the window is being dragged.
+    /// Values keep their targets and land there when resumed.
+    /// </summary>
+    public static bool Paused { get; set; }
+
+    /// <summary>Number of animations currently running, for diagnostics.</summary>
+    public static int ActiveCount {
+      get { return active.Count; }
+    }
 
     /// <summary>
     /// Runs <paramref name="frame"/> on every frame until it returns false.
@@ -111,12 +138,6 @@ namespace OpenHardwareMonitor.GUI.Modern {
       }
       timer.Enabled = true;
     }
-
-    /// <summary>
-    /// Holds every animation, for example while the window is being dragged.
-    /// Values keep their targets and land there when resumed.
-    /// </summary>
-    public static bool Paused { get; set; }
 
     private static void OnTick(object? sender, EventArgs e) {
       if (Paused)
@@ -134,11 +155,24 @@ namespace OpenHardwareMonitor.GUI.Modern {
       if (active.Count == 0 && timer != null)
         timer.Enabled = false;
     }
+
+    /// <summary>
+    /// True when a control can actually be seen: created, visible along its
+    /// parent chain, and its window not minimised. Motion for anything else is
+    /// pure cost.
+    /// </summary>
+    public static bool IsOnScreen(Control control) {
+      if (control.IsDisposed || !control.IsHandleCreated || !control.Visible)
+        return false;
+      Form? form = control.FindForm();
+      return form == null || form.WindowState != FormWindowState.Minimized;
+    }
   }
 
   /// <summary>
   /// A value that glides toward its target. Reading <see cref="Value"/> is
-  /// cheap; the owner is invalidated on each frame while it moves.
+  /// cheap. While it moves, the owner is invalidated on each frame - only the
+  /// region <see cref="InvalidateRegion"/> returns, when set.
   /// </summary>
   public sealed class AnimatedValue {
 
@@ -158,6 +192,9 @@ namespace OpenHardwareMonitor.GUI.Modern {
       this.easing = easing ?? Easing.OutCubic;
     }
 
+    /// <summary>The part of the owner that changes with this value.</summary>
+    public Func<Rectangle>? InvalidateRegion { get; set; }
+
     public float Target {
       get { return to; }
     }
@@ -175,13 +212,19 @@ namespace OpenHardwareMonitor.GUI.Modern {
       }
     }
 
-    /// <summary>Moves toward <paramref name="target"/>; the first call snaps.</summary>
+    /// <summary>
+    /// Moves toward <paramref name="target"/>. The first call, and any call
+    /// while motion is off or the owner cannot be seen, snaps.
+    /// </summary>
     public void Set(float target, bool animate = true) {
-      if (!initialized || !animate || !Animator.Enabled || float.IsNaN(target) ||
-        float.IsNaN(to)) {
+      if (!initialized || !animate || float.IsNaN(target) || float.IsNaN(to) ||
+        !Animator.Enabled || !Animator.IsOnScreen(owner)) {
+        bool changed = !initialized || to != target || running;
         initialized = true;
         from = to = target;
         running = false;
+        if (changed && initialized)
+          InvalidateOwner();
         return;
       }
       if (Math.Abs(target - to) < 0.0001f)
@@ -195,15 +238,23 @@ namespace OpenHardwareMonitor.GUI.Modern {
       }
     }
 
+    private void InvalidateOwner() {
+      if (owner.IsDisposed || !owner.IsHandleCreated)
+        return;
+      if (InvalidateRegion != null)
+        owner.Invalidate(InvalidateRegion());
+      else
+        owner.Invalidate();
+    }
+
     private bool Frame() {
       if (owner.IsDisposed) {
         running = false;
         return false;
       }
-      owner.Invalidate();
+      InvalidateOwner();
       if (Animator.Now - startTime >= durationSeconds) {
         running = false;
-        owner.Invalidate();
         return false;
       }
       return true;

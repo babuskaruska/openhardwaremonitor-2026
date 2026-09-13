@@ -121,11 +121,17 @@ namespace OpenHardwareMonitor.GUI {
 
     /// <summary>
     /// Sensors are read on a background thread so the window never waits for
-    /// hardware. Called from the constructor once the computer is open.
+    /// hardware, and that thread also opens the computer. Created early in the
+    /// constructor, because the sensor options use its lock, and started at
+    /// the end.
     /// </summary>
-    private void StartSensorPolling() {
+    private void CreateSensorPoller() {
       UiThread.Initialize();
-      poller = new SensorPoller(computer, this, PollOnSensorThread, RefreshAfterPoll);
+      poller = new SensorPoller(computer, this, PollOnSensorThread, RefreshAfterPoll,
+        () => computer.Open());
+    }
+
+    private void StartSensorPolling() {
       poller.Start();
     }
 
@@ -155,6 +161,10 @@ namespace OpenHardwareMonitor.GUI {
         plotPanel.InvalidatePlot();
       systemTray.Redraw();
       gadget?.Redraw();
+      if (fansPage != null && fansPage.Visible)
+        fansPage.UpdateValues();
+      if (settingsPage != null && settingsPage.Visible)
+        settingsPage.RefreshValues();
     }
 
     protected override void OnHandleCreated(EventArgs e) {
@@ -166,11 +176,7 @@ namespace OpenHardwareMonitor.GUI {
       if (hardware != null)
         RevealHardware(hardware);
 
-      if (!splitContainer.Visible) {
-        ViewTransition.Switch(overview, splitContainer, true);
-        overviewMenuItem.Checked = false;
-        allSensorsMenuItem.Checked = true;
-      }
+      ShowPage(1);
 
       if (hardware != null && treeView.SelectedNode != null)
         treeView.EnsureVisible(treeView.SelectedNode);
@@ -178,11 +184,7 @@ namespace OpenHardwareMonitor.GUI {
     }
 
     private void ShowOverview() {
-      if (overview.Visible)
-        return;
-      ViewTransition.Switch(splitContainer, overview, false);
-      overviewMenuItem.Checked = true;
-      allSensorsMenuItem.Checked = false;
+      ShowPage(0);
     }
 
     /// <summary>Expands and selects the list entry of one piece of hardware.</summary>
@@ -201,10 +203,19 @@ namespace OpenHardwareMonitor.GUI {
       // Leave Escape to an in-place sensor rename, which hosts an editor
       // inside the tree.
       bool editing = treeView.ContainsFocus && !treeView.Focused;
-      if (splitContainer.Visible && !editing &&
+      if (currentPage != 0 && !editing &&
         (keyData == Keys.Escape || keyData == (Keys.Alt | Keys.Left))) {
         ShowOverview();
         return true;
+      }
+      switch (keyData) {
+        case Keys.Control | Keys.D1: ShowPage(0); return true;
+        case Keys.Control | Keys.D2: ShowPage(1); return true;
+        case Keys.Control | Keys.D3: ShowPage(2); return true;
+        case Keys.Control | Keys.D4: ShowPage(3); return true;
+        case Keys.Control | Keys.E:
+          exportDiagnosticsMenuItem_Click(this, EventArgs.Empty);
+          return true;
       }
       return base.ProcessCmdKey(ref msg, keyData);
     }

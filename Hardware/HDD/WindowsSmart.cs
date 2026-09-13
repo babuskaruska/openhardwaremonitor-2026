@@ -12,7 +12,7 @@
 
 using System;
 using System.Collections.Generic;
-using System.Management;
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace OpenHardwareMonitor.Hardware.HDD {
@@ -342,25 +342,73 @@ namespace OpenHardwareMonitor.Hardware.HDD {
       NativeMethods.CloseHandle(handle);
     }
 
+    private const uint IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS = 0x00560000;
+
+    /// <summary>
+    /// Drive letters of the volumes stored on the given physical drive.
+    /// This used to ask WMI (Win32_DiskPartition, then Win32_LogicalDisk),
+    /// which took from a tenth of a second to several seconds per drive while
+    /// storage was being detected. Every volume can report its own disk
+    /// extents directly, in microseconds and without the WMI service.
+    /// </summary>
     public string[] GetLogicalDrives(int driveIndex) {
       List<string> list = new List<string>();
+      DriveInfo[] drives;
       try {
-        using (ManagementObjectSearcher s = new ManagementObjectSearcher(
-            "root\\CIMV2",
-            "SELECT * FROM Win32_DiskPartition " +
-            "WHERE DiskIndex = " + driveIndex))
-        using (ManagementObjectCollection dpc = s.Get())
-        foreach (ManagementObject dp in dpc) 
-          using (ManagementObjectCollection ldc = 
-            dp.GetRelated("Win32_LogicalDisk"))
-          foreach (ManagementBaseObject ld in ldc) 
-            list.Add(((string)ld["Name"]).TrimEnd(':')); 
-      } catch { }
+        drives = DriveInfo.GetDrives();
+      } catch (IOException) {
+        return list.ToArray();
+      } catch (UnauthorizedAccessException) {
+        return list.ToArray();
+      }
+
+      foreach (DriveInfo drive in drives) {
+        string letter = drive.Name.TrimEnd('\\', ':');
+        if (letter.Length != 1 || drive.DriveType == DriveType.Network ||
+          drive.DriveType == DriveType.CDRom ||
+          drive.DriveType == DriveType.NoRootDirectory)
+          continue;
+
+        // No access rights are needed to ask a volume where it lives.
+        IntPtr volume = NativeMethods.CreateFile(@"\\.\" + letter + ":", 0,
+          ShareMode.Read | ShareMode.Write, IntPtr.Zero,
+          CreationMode.OpenExisting, 0, IntPtr.Zero);
+        if (volume == InvalidHandle)
+          continue;
+        try {
+          if (IsOnDrive(volume, driveIndex))
+            list.Add(letter);
+        } finally {
+          NativeMethods.CloseHandle(volume);
+        }
+      }
       return list.ToArray();
+    }
+
+    private static bool IsOnDrive(IntPtr volume, int driveIndex) {
+      // VOLUME_DISK_EXTENTS: a count, then 24-byte DISK_EXTENT entries (disk
+      // number, padding, starting offset, length) beginning at offset 8.
+      byte[] buffer = new byte[8 + 24 * 16];
+      if (!NativeMethods.DeviceIoControl(volume,
+        IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, IntPtr.Zero, 0, buffer,
+        buffer.Length, out uint returned, IntPtr.Zero))
+        return false;
+      int count = BitConverter.ToInt32(buffer, 0);
+      for (int i = 0; i < count && 8 + 24 * (i + 1) <= returned; i++) {
+        if (BitConverter.ToInt32(buffer, 8 + 24 * i) == driveIndex)
+          return true;
+      }
+      return false;
     }
 
     protected static class NativeMethods {
       private const string KERNEL = "kernel32.dll";
+
+      [DllImport(KERNEL, CallingConvention = CallingConvention.Winapi)]
+      [return: MarshalAs(UnmanagedType.Bool)]
+      public static extern bool DeviceIoControl(IntPtr handle,
+        uint controlCode, IntPtr inBuffer, int inBufferSize, byte[] outBuffer,
+        int outBufferSize, out uint bytesReturned, IntPtr overlapped);
 
       [DllImport(KERNEL, CallingConvention = CallingConvention.Winapi,
         CharSet = CharSet.Unicode)]

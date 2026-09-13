@@ -24,15 +24,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- WMI consumer APIs (SMBIOS.cs, HDD\WindowsSmart.cs). Note this is the
-         consumer side only; System.Management.Instrumentation (the provider
-         side, used by the old WMI\ folder) has no .NET 10 counterpart. -->
-    <PackageReference Include="System.Management" Version="10.0.0" />
     <!-- Heatmaster / T-Balancer fan controllers speak over a serial port. -->
     <PackageReference Include="System.IO.Ports" Version="10.0.0" />
-    <!-- "% Processor Performance" counter: the only driver-free source of
-         live per-core clocks that tracks Speed Shift / HWP boost. -->
-    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.0" />
   </ItemGroup>
 
 

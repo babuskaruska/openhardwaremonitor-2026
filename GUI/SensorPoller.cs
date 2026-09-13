@@ -44,6 +44,7 @@ namespace OpenHardwareMonitor.GUI {
     private readonly Control owner;
     private readonly Action afterUpdate;
     private readonly Action refresh;
+    private readonly Action? initialize;
     private readonly UpdateVisitor visitor = new UpdateVisitor();
     private readonly ManualResetEventSlim stop = new ManualResetEventSlim(false);
     private readonly AutoResetEvent refreshed = new AutoResetEvent(false);
@@ -53,12 +54,17 @@ namespace OpenHardwareMonitor.GUI {
     /// <param name="afterUpdate">Runs on the poll thread after each update,
     /// still under the lock (fan curves, logging).</param>
     /// <param name="refresh">Runs on the UI thread after each update.</param>
+    /// <param name="initialize">Runs once on the poll thread, under the lock,
+    /// before the first update. Opening the hardware takes from half a second
+    /// to several seconds on a cold start, so it happens here instead of
+    /// holding up the window.</param>
     public SensorPoller(IComputer computer, Control owner, Action afterUpdate,
-      Action refresh) {
+      Action refresh, Action? initialize = null) {
       this.computer = computer;
       this.owner = owner;
       this.afterUpdate = afterUpdate;
       this.refresh = refresh;
+      this.initialize = initialize;
     }
 
     /// <summary>Held for every hardware access.</summary>
@@ -96,6 +102,16 @@ namespace OpenHardwareMonitor.GUI {
     }
 
     private void Run() {
+      if (initialize != null) {
+        lock (Sync) {
+          try {
+            initialize();
+          } catch (Exception ex) {
+            LastError = ex;
+          }
+        }
+      }
+
       Stopwatch clock = Stopwatch.StartNew();
       double next = 0;
 

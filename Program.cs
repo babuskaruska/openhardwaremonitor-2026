@@ -25,7 +25,7 @@ namespace OpenHardwareMonitor {
       @"Local\OpenHardwareMonitor.SingleInstance";
 
     [STAThread]
-    public static void Main() {
+    public static void Main(string[] args) {
       #if !DEBUG
         Application.ThreadException +=
           new ThreadExceptionEventHandler(Application_ThreadException);
@@ -43,7 +43,9 @@ namespace OpenHardwareMonitor {
 
       using (Mutex mutex = new Mutex(true, SingleInstanceMutexName,
         out bool createdNew)) {
-        if (!createdNew)
+        // A restart (for example as administrator) waits for the previous
+        // instance to finish closing instead of giving up straight away.
+        if (!createdNew && !WaitForPreviousInstance(args, mutex))
           return;
 
         // Both of these must precede creating any window. DPI awareness is
@@ -62,6 +64,30 @@ namespace OpenHardwareMonitor {
         }
 
         GC.KeepAlive(mutex);
+      }
+    }
+
+    /// <summary>
+    /// With --wait-for-pid N, waits for that process to exit and then for
+    /// the single-instance lock. Returns false when it cannot be taken.
+    /// </summary>
+    private static bool WaitForPreviousInstance(string[] args, Mutex mutex) {
+      int index = Array.IndexOf(args, "--wait-for-pid");
+      if (index < 0)
+        return false;
+      if (index + 1 < args.Length && int.TryParse(args[index + 1], out int pid)) {
+        try {
+          using (System.Diagnostics.Process previous =
+            System.Diagnostics.Process.GetProcessById(pid))
+            previous.WaitForExit(15000);
+        } catch (ArgumentException) {
+          // Already gone.
+        }
+      }
+      try {
+        return mutex.WaitOne(15000);
+      } catch (AbandonedMutexException) {
+        return true;
       }
     }
 

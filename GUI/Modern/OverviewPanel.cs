@@ -97,6 +97,13 @@ namespace OpenHardwareMonitor.GUI.Modern {
       computer.HardwareAdded += OnHardwareChanged;
       computer.HardwareRemoved += OnHardwareChanged;
       ApplyTheme(theme);
+
+      // Hardware is still being detected on the sensor thread when the window
+      // opens, so say that rather than showing an empty page.
+      header.Title = Environment.MachineName;
+      header.Subtitle = SystemSummary();
+      header.Chip = "Detecting hardware…";
+      header.ChipSeverity = Severity.Normal;
     }
 
     /// <summary>Raised with the card's hardware, or null for the whole list.</summary>
@@ -107,6 +114,14 @@ namespace OpenHardwareMonitor.GUI.Modern {
     public bool ShowExportButton {
       get { return header.ShowExport; }
       set { header.ShowExport = value; }
+    }
+
+    public bool ShowDetailsButton {
+      get { return header.ShowDetails; }
+      set {
+        header.ShowDetails = value;
+        header.Invalidate();
+      }
     }
 
     public Theme Theme {
@@ -140,6 +155,27 @@ namespace OpenHardwareMonitor.GUI.Modern {
       base.Dispose(disposing);
     }
 
+    private static string SystemSummary() {
+      return (Environment.OSVersion.Version.Build >= 22000 ? "Windows 11" : "Windows") +
+        "  ·  " + Environment.ProcessorCount + " logical processors";
+    }
+
+    private void UpdateHeader() {
+      header.Title = Environment.MachineName;
+      header.Subtitle = SystemSummary();
+      bool deep = HardwareAccess.Tier == AccessTier.Deep;
+      header.Chip = deep ? "Full sensor access" : "Basic sensor access";
+      header.ChipSeverity = deep ? Severity.Normal : Severity.Warm;
+    }
+
+    protected override void OnVisibleChanged(EventArgs e) {
+      base.OnVisibleChanged(e);
+      if (Visible && firstUpdate) {
+        firstUpdate = false;
+        header.PlayEntrance();
+      }
+    }
+
     /// <summary>Refreshes every card. Call after each sensor update.</summary>
     public void UpdateValues() {
       RecordHistory();
@@ -147,17 +183,7 @@ namespace OpenHardwareMonitor.GUI.Modern {
       if (rebuildPending)
         Rebuild();
 
-      header.Title = Environment.MachineName;
-      header.Subtitle = (Environment.OSVersion.Version.Build >= 22000
-        ? "Windows 11" : "Windows") + "  ·  " + Environment.ProcessorCount +
-        " logical processors";
-      bool deep = HardwareAccess.Tier == AccessTier.Deep;
-      header.Chip = deep ? "Full sensor access" : "Basic sensor access";
-      header.ChipSeverity = deep ? Severity.Normal : Severity.Warm;
-      if (firstUpdate) {
-        header.PlayEntrance();
-        firstUpdate = false;
-      }
+      UpdateHeader();
       header.Invalidate();
 
       foreach (CardSlot slot in slots) {
@@ -763,6 +789,8 @@ namespace OpenHardwareMonitor.GUI.Modern {
     public string Chip { get; set; } = "";
     public Severity ChipSeverity { get; set; }
 
+    public bool ShowDetails { get; set; } = true;
+
     public bool ShowExport {
       get { return showExport; }
       set {
@@ -921,23 +949,26 @@ namespace OpenHardwareMonitor.GUI.Modern {
         right = export.Left - S(10);
       }
 
-      Size detailsText = TextRenderer.MeasureText(DetailsText, buttonFont, Size.Empty, Flags);
-      RectangleF details = new RectangleF(right - detailsText.Width - S(32), buttonY,
-        detailsText.Width + S(32), buttonHeight);
-      if (pressed == 1)
-        details.Inflate(-S(1), -S(1));
-      float dh = detailsHover.Value;
-      using (GraphicsPath path = Theme.RoundedRect(details, S(8)))
-      using (SolidBrush brush = new SolidBrush(
-        ColorMath.Lerp(theme.Surface, theme.SurfaceSunken, dh)))
-      using (Pen pen = new Pen(ColorMath.Lerp(theme.Border,
-        Theme.Blend(theme.Border, theme.Text, 0.18f), dh), Math.Max(1f, S(1)))) {
-        g.FillPath(brush, path);
-        g.DrawPath(pen, path);
+      detailsBounds = Rectangle.Empty;
+      if (ShowDetails) {
+        Size detailsText = TextRenderer.MeasureText(DetailsText, buttonFont, Size.Empty, Flags);
+        RectangleF details = new RectangleF(right - detailsText.Width - S(32), buttonY,
+          detailsText.Width + S(32), buttonHeight);
+        if (pressed == 1)
+          details.Inflate(-S(1), -S(1));
+        float dh = detailsHover.Value;
+        using (GraphicsPath path = Theme.RoundedRect(details, S(8)))
+        using (SolidBrush brush = new SolidBrush(
+          ColorMath.Lerp(theme.Surface, theme.SurfaceSunken, dh)))
+        using (Pen pen = new Pen(ColorMath.Lerp(theme.Border,
+          Theme.Blend(theme.Border, theme.Text, 0.18f), dh), Math.Max(1f, S(1)))) {
+          g.FillPath(brush, path);
+          g.DrawPath(pen, path);
+        }
+        TextRenderer.DrawText(g, DetailsText, buttonFont, Rectangle.Round(details), theme.Text,
+          Flags | TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        detailsBounds = Rectangle.Round(details);
       }
-      TextRenderer.DrawText(g, DetailsText, buttonFont, Rectangle.Round(details), theme.Text,
-        Flags | TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-      detailsBounds = Rectangle.Round(details);
 
       if (enter < 1) {
         using (SolidBrush veil = new SolidBrush(

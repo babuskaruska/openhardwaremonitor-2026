@@ -14,6 +14,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Globalization;
 using System.Windows.Forms;
 
@@ -71,10 +72,14 @@ namespace OpenHardwareMonitor.GUI.Modern {
 
   /// <summary>
   /// A rounded, owner-drawn summary card. Structure comes from spacing, type
-  /// weight and a soft shadow rather than lines. Motion is deliberately
-  /// small: cards ease in, lift under the pointer, press when clicked, and
-  /// readings glide to new values. All of it respects the Windows animation
-  /// setting and only runs while something actually changes.
+  /// weight and a soft shadow rather than lines.
+  ///
+  /// Motion is small and cheap. Cards ease in, lift under the pointer and
+  /// press when clicked; readings glide to new values. Readings change every
+  /// second, so the steady state is engineered to cost almost nothing: the
+  /// shadow and surface are rendered once into a cached bitmap, a changing
+  /// value repaints only its own region, and everything outside the region
+  /// is skipped while drawing.
   /// </summary>
   public sealed class SensorCard : Control {
 
@@ -106,6 +111,18 @@ namespace OpenHardwareMonitor.GUI.Modern {
     private readonly List<AnimatedValue> rowBars = new List<AnimatedValue>();
     private Severity previousSeverity;
 
+    // Regions in control coordinates, recorded by the last full render, so an
+    // animated value can repaint just the pixels it affects.
+    private RectangleF heroRegion, trendRegion;
+    private readonly List<RectangleF> metricBarRegions = new List<RectangleF>();
+    private readonly List<RectangleF> rowBarRegions = new List<RectangleF>();
+
+    // Per paint: the dirty rectangle (empty means everything) and where the
+    // content origin sits in control coordinates.
+    private Rectangle paintClip;
+    private PointF contentOrigin;
+
+    private Bitmap? chrome;
     private double entranceStart = double.NaN;
     private float entranceDelay;
     private bool pointerDown;
@@ -113,6 +130,7 @@ namespace OpenHardwareMonitor.GUI.Modern {
     private int fontDpi;
     private Font? badgeFont, titleFont, subtitleFont, linkFont, heroFont,
       unitFont, labelFont, valueFont, rowFont, rowValueFont;
+    private Size linkSize, arrowSize;
 
     public SensorCard() {
       SetStyle(ControlStyles.AllPaintingInWmPaint |
@@ -126,12 +144,20 @@ namespace OpenHardwareMonitor.GUI.Modern {
       hover.Set(0);
       press = new AnimatedValue(this, 0.12f);
       press.Set(0);
-      heroNumber = new AnimatedValue(this, 0.7f);
-      severityMix = new AnimatedValue(this, 0.5f);
+      heroNumber = new AnimatedValue(this, 0.35f) {
+        InvalidateRegion = () => RegionFor(heroRegion)
+      };
+      severityMix = new AnimatedValue(this, 0.4f) {
+        InvalidateRegion = () => RegionFor(RectangleF.Union(heroRegion, trendRegion))
+      };
       severityMix.Set(1);
-      trendReveal = new AnimatedValue(this, 1.1f);
+      trendReveal = new AnimatedValue(this, 0.9f) {
+        InvalidateRegion = () => RegionFor(trendRegion)
+      };
       trendReveal.Set(0);
-      ping = new AnimatedValue(this, 1.0f);
+      ping = new AnimatedValue(this, 0.9f) {
+        InvalidateRegion = () => RegionFor(trendRegion)
+      };
       ping.Set(1);
     }
 
@@ -147,6 +173,7 @@ namespace OpenHardwareMonitor.GUI.Modern {
       set {
         theme = value;
         BackColor = theme.Background;
+        DiscardChrome();
         Invalidate();
       }
     }
@@ -169,7 +196,7 @@ namespace OpenHardwareMonitor.GUI.Modern {
 
     /// <summary>Fades and slides the card in after <paramref name="delaySeconds"/>.</summary>
     public void PlayEntrance(float delaySeconds) {
-      if (!Animator.Enabled)
+      if (!Animator.Enabled || !Animator.IsOnScreen(this))
         return;
       entranceStart = Animator.Now;
       entranceDelay = delaySeconds;
@@ -194,30 +221,33 @@ namespace OpenHardwareMonitor.GUI.Modern {
       return logical * DeviceDpi / 96f;
     }
 
+    private Rectangle RegionFor(RectangleF region) {
+      if (region.IsEmpty)
+        return ClientRectangle;
+      return Rectangle.Ceiling(RectangleF.Inflate(region, S(3), S(3)));
+    }
+
     // ---- model changes ------------------------------------------------------
 
     private void ApplyModel(CardModel next) {
-      if (next.HeroNumber.HasValue) {
-        bool visibleChange = hasModel && model.HeroNumber.HasValue &&
-          Math.Round(next.HeroNumber.Value, next.HeroDecimals) !=
-          Math.Round(model.HeroNumber.Value, model.HeroDecimals);
+      if (next.HeroNumber.HasValue)
         heroNumber.Set(next.HeroNumber.Value, hasModel && model.HeroNumber.HasValue);
-        if (visibleChange) {
-          ping.Set(0, false);
-          ping.Set(1);
-        }
-      }
 
       if (!hasModel) {
         previousSeverity = next.HeroSeverity;
       } else if (next.HeroSeverity != model.HeroSeverity) {
+        // Colour cross-fade and a single soft ping when a reading moves into
+        // (or out of) a warm or hot range - not on every change, which with
+        // readings updating each second would mean constant motion.
         previousSeverity = model.HeroSeverity;
         severityMix.Set(0, false);
         severityMix.Set(1);
+        ping.Set(0, false);
+        ping.Set(1);
       }
 
-      SyncBars(metricBars, next.Metrics);
-      SyncBars(rowBars, next.Rows);
+      SyncBars(metricBars, next.Metrics, metricBarRegions);
+      SyncBars(rowBars, next.Rows, rowBarRegions);
 
       if (next.Trend != null && next.Trend.Length > 1 && trendReveal.Target < 1)
         trendReveal.Set(1);
@@ -230,15 +260,23 @@ namespace OpenHardwareMonitor.GUI.Modern {
       Invalidate();
     }
 
-    private void SyncBars(List<AnimatedValue> bars, List<CardMetric> items) {
+    private void SyncBars(List<AnimatedValue> bars, List<CardMetric> items,
+      List<RectangleF> regions) {
       while (bars.Count < items.Count) {
-        AnimatedValue bar = new AnimatedValue(this, 0.8f);
+        int index = bars.Count;
+        AnimatedValue bar = new AnimatedValue(this, 0.45f) {
+          InvalidateRegion = () => RegionFor(index < regions.Count ? regions[index] : RectangleF.Empty)
+        };
         bar.Set(0);
         bars.Add(bar);
       }
-      for (int i = 0; i < items.Count; i++)
-        if (items[i].Fraction.HasValue)
-          bars[i].Set(items[i].Fraction!.Value);
+      for (int i = 0; i < items.Count; i++) {
+        if (!items[i].Fraction.HasValue)
+          continue;
+        float target = items[i].Fraction!.Value;
+        // Glide on a visible change; tiny second-to-second jitter just snaps.
+        bars[i].Set(target, Math.Abs(bars[i].Target - target) >= 0.02f);
+      }
     }
 
     private string HeroText() {
@@ -273,6 +311,8 @@ namespace OpenHardwareMonitor.GUI.Modern {
       valueFont = Theme.CreateFont(Theme.SemiboldFamily, 11f, FontStyle.Regular, dpi);
       rowFont = Theme.CreateFont(Theme.TextFamily, 9.5f, FontStyle.Regular, dpi);
       rowValueFont = Theme.CreateFont(Theme.SemiboldFamily, 9.5f, FontStyle.Regular, dpi);
+      linkSize = TextRenderer.MeasureText(MoreInfoText, linkFont, Size.Empty, Flags);
+      arrowSize = TextRenderer.MeasureText(MoreInfoArrow, linkFont, Size.Empty, Flags);
     }
 
     private void DisposeFonts() {
@@ -282,15 +322,28 @@ namespace OpenHardwareMonitor.GUI.Modern {
       badgeFont = null;
     }
 
+    private void DiscardChrome() {
+      chrome?.Dispose();
+      chrome = null;
+    }
+
     protected override void OnDpiChangedAfterParent(EventArgs e) {
       base.OnDpiChangedAfterParent(e);
       fontDpi = 0;
+      DiscardChrome();
       Invalidate();
     }
 
+    protected override void OnSizeChanged(EventArgs e) {
+      base.OnSizeChanged(e);
+      DiscardChrome();
+    }
+
     protected override void Dispose(bool disposing) {
-      if (disposing)
+      if (disposing) {
         DisposeFonts();
+        DiscardChrome();
+      }
       base.Dispose(disposing);
     }
 
@@ -298,48 +351,31 @@ namespace OpenHardwareMonitor.GUI.Modern {
 
     protected override void OnPaint(PaintEventArgs e) {
       Graphics g = e.Graphics;
-      g.Clear(theme.Background);
-      g.SmoothingMode = SmoothingMode.AntiAlias;
-      g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-
       Padding margin = ShadowPadding;
       float hoverAmount = hover.Value;
       float pressAmount = press.Value;
       float enter = EntranceProgress;
+      float radius = S(14);
 
+      bool steady = hoverAmount < 0.001f && pressAmount < 0.001f && enter > 0.999f;
       float offsetY = (1 - enter) * S(18) - S(2) * hoverAmount + S(1) * pressAmount;
       RectangleF surface = new RectangleF(margin.Left + 0.5f, margin.Top + 0.5f,
         Width - margin.Horizontal - 1f, Height - margin.Vertical - 1f);
       if (pressAmount > 0)
         surface.Inflate(-S(2) * pressAmount, -S(2) * pressAmount);
       surface.Offset(0, offsetY);
-      float radius = S(14);
 
-      DrawShadow(g, surface, radius, hoverAmount * (1 - pressAmount * 0.6f), enter);
-
-      using (GraphicsPath path = Theme.RoundedRect(surface, radius)) {
-        Color fill = ColorMath.Lerp(theme.Surface, theme.SurfaceHover, hoverAmount);
-        using (SolidBrush brush = new SolidBrush(fill))
-          g.FillPath(brush, path);
-
-        // A faint top highlight gives the surface a hint of depth.
-        RectangleF sheen = new RectangleF(surface.X, surface.Y, surface.Width, S(28));
-        using (LinearGradientBrush highlight = new LinearGradientBrush(
-          RectangleF.Inflate(sheen, 0, 1),
-          Color.FromArgb(theme.IsDark ? 14 : 0, Color.White),
-          Color.FromArgb(0, Color.White), LinearGradientMode.Vertical)) {
-          GraphicsState clip = g.Save();
-          g.SetClip(path, CombineMode.Intersect);
-          g.FillRectangle(highlight, sheen);
-          g.Restore(clip);
-        }
-
-        Color borderHover = Theme.Blend(theme.Border, theme.Accent,
-          theme.IsDark ? 0.45f : 0.30f);
-        using (Pen border = new Pen(ColorMath.Lerp(theme.Border, borderHover, hoverAmount),
-          Math.Max(1f, S(1))))
-          g.DrawPath(border, path);
+      if (steady) {
+        // The expensive part - shadow layers, rounded paths, gradients - is
+        // the same every frame; copy it from the cache.
+        Bitmap background = GetChrome(surface, radius);
+        g.DrawImage(background, e.ClipRectangle, e.ClipRectangle, GraphicsUnit.Pixel);
+      } else {
+        DrawChrome(g, surface, radius, hoverAmount, pressAmount, enter);
       }
+
+      g.SmoothingMode = SmoothingMode.AntiAlias;
+      g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
       if (Focused && ShowFocusCues) {
         RectangleF ring = RectangleF.Inflate(surface, S(2.5f), S(2.5f));
@@ -348,16 +384,67 @@ namespace OpenHardwareMonitor.GUI.Modern {
           g.DrawPath(pen, path);
       }
 
+      float originX = (float)Math.Round(surface.X - 0.5f);
+      float originY = (float)Math.Round(surface.Y - 0.5f);
+      contentOrigin = new PointF(originX, originY);
+      paintClip = e.ClipRectangle == ClientRectangle ? Rectangle.Empty : e.ClipRectangle;
+
       GraphicsState state = g.Save();
-      g.TranslateTransform((float)Math.Round(surface.X - 0.5f),
-        (float)Math.Round(surface.Y - 0.5f));
+      g.TranslateTransform(originX, originY);
       Render(g, (int)Math.Round(surface.Width + 1), hoverAmount);
       g.Restore(state);
+      paintClip = Rectangle.Empty;
 
       if (enter < 1) {
         using (SolidBrush veil = new SolidBrush(
           Color.FromArgb((int)Math.Round((1 - enter) * 255), theme.Background)))
           g.FillRectangle(veil, ClientRectangle);
+      }
+    }
+
+    private Bitmap GetChrome(RectangleF surface, float radius) {
+      if (chrome != null && chrome.Width == Width && chrome.Height == Height)
+        return chrome;
+      DiscardChrome();
+      Bitmap bitmap = new Bitmap(Math.Max(1, Width), Math.Max(1, Height),
+        PixelFormat.Format32bppPArgb);
+      using (Graphics g = Graphics.FromImage(bitmap))
+        DrawChrome(g, surface, radius, 0, 0, 1);
+      chrome = bitmap;
+      return bitmap;
+    }
+
+    private void DrawChrome(Graphics g, RectangleF surface, float radius,
+      float hoverAmount, float pressAmount, float enter) {
+      g.Clear(theme.Background);
+      g.SmoothingMode = SmoothingMode.AntiAlias;
+      g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+      DrawShadow(g, surface, radius, hoverAmount * (1 - pressAmount * 0.6f), enter);
+
+      using (GraphicsPath path = Theme.RoundedRect(surface, radius)) {
+        Color fill = ColorMath.Lerp(theme.Surface, theme.SurfaceHover, hoverAmount);
+        using (SolidBrush brush = new SolidBrush(fill))
+          g.FillPath(brush, path);
+
+        if (theme.IsDark) {
+          // A faint top highlight gives the dark surface a hint of depth.
+          RectangleF sheen = new RectangleF(surface.X, surface.Y, surface.Width, S(28));
+          using (LinearGradientBrush highlight = new LinearGradientBrush(
+            RectangleF.Inflate(sheen, 0, 1), Color.FromArgb(14, Color.White),
+            Color.FromArgb(0, Color.White), LinearGradientMode.Vertical)) {
+            GraphicsState clip = g.Save();
+            g.SetClip(path, CombineMode.Intersect);
+            g.FillRectangle(highlight, sheen);
+            g.Restore(clip);
+          }
+        }
+
+        Color borderHover = Theme.Blend(theme.Border, theme.Accent,
+          theme.IsDark ? 0.45f : 0.30f);
+        using (Pen border = new Pen(ColorMath.Lerp(theme.Border, borderHover, hoverAmount),
+          Math.Max(1f, S(1))))
+          g.DrawPath(border, path);
       }
     }
 
@@ -382,13 +469,29 @@ namespace OpenHardwareMonitor.GUI.Modern {
       }
     }
 
+    /// <summary>True when a content-space rectangle needs drawing this paint.</summary>
+    private bool Dirty(RectangleF content) {
+      if (paintClip.IsEmpty)
+        return true;
+      content.Offset(contentOrigin);
+      content.Inflate(S(2), S(2));
+      return content.IntersectsWith(paintClip);
+    }
+
+    private RectangleF ToControl(RectangleF content) {
+      content.Offset(contentOrigin);
+      return content;
+    }
+
     /// <summary>
     /// Lays out and, when a Graphics is supplied, draws the card contents at
     /// the origin. Measuring and drawing share one pass so the preferred
-    /// height always matches what is drawn.
+    /// height always matches what is drawn. Sections outside the dirty
+    /// rectangle are skipped.
     /// </summary>
     private float Render(Graphics? g, int width, float hoverAmount = 0) {
       EnsureFonts();
+      bool drawing = g != null;
       float pad = S(18);
       float x = pad;
       float y = pad;
@@ -396,27 +499,25 @@ namespace OpenHardwareMonitor.GUI.Modern {
 
       // Header: badge, title and subtitle, "More info" link.
       float badgeSize = S(34);
-      Size linkSize = TextRenderer.MeasureText(MoreInfoText, linkFont!, Size.Empty, Flags);
-      Size arrowSize = TextRenderer.MeasureText(MoreInfoArrow, linkFont!, Size.Empty, Flags);
       float linkWidth = linkSize.Width + S(6) + arrowSize.Width + S(3);
       float titleX = x + badgeSize + S(12);
       float titleWidth = Math.Max(S(40), width - pad - titleX - linkWidth - S(12));
-      if (g != null) {
+      if (drawing && Dirty(new RectangleF(0, 0, width, pad + badgeSize))) {
         RectangleF badge = new RectangleF(x, y, badgeSize, badgeSize);
         Color badgeFill = Theme.Blend(theme.Surface, theme.Accent,
           (theme.IsDark ? 0.20f : 0.11f) + 0.06f * hoverAmount);
         using (GraphicsPath path = Theme.RoundedRect(badge, S(9)))
         using (SolidBrush fill = new SolidBrush(badgeFill))
-          g.FillPath(fill, path);
-        TextRenderer.DrawText(g, model.Badge, badgeFont!, Rectangle.Round(badge),
+          g!.FillPath(fill, path);
+        TextRenderer.DrawText(g!, model.Badge, badgeFont!, Rectangle.Round(badge),
           theme.Accent, Flags | TextFormatFlags.HorizontalCenter |
           TextFormatFlags.VerticalCenter);
 
         float titleTop = y + (badgeSize - titleFont!.Height - subtitleFont!.Height) / 2;
-        TextRenderer.DrawText(g, model.Title, titleFont,
+        TextRenderer.DrawText(g!, model.Title, titleFont,
           new Rectangle((int)titleX, (int)titleTop, (int)titleWidth, titleFont.Height),
           theme.Text, Flags | TextFormatFlags.EndEllipsis);
-        TextRenderer.DrawText(g, model.Subtitle, subtitleFont,
+        TextRenderer.DrawText(g!, model.Subtitle, subtitleFont,
           new Rectangle((int)titleX, (int)titleTop + titleFont.Height,
             (int)titleWidth, subtitleFont.Height),
           theme.TextSecondary, Flags | TextFormatFlags.EndEllipsis);
@@ -425,9 +526,9 @@ namespace OpenHardwareMonitor.GUI.Modern {
           Theme.Blend(theme.Accent, theme.Text, theme.IsDark ? 0.30f : 0.20f), hoverAmount);
         float linkX = width - pad - linkWidth;
         float linkY = y + (badgeSize - linkSize.Height) / 2;
-        TextRenderer.DrawText(g, MoreInfoText, linkFont!,
+        TextRenderer.DrawText(g!, MoreInfoText, linkFont!,
           new Point((int)linkX, (int)linkY), linkColor, Flags);
-        TextRenderer.DrawText(g, MoreInfoArrow, linkFont!,
+        TextRenderer.DrawText(g!, MoreInfoArrow, linkFont!,
           new Point((int)(linkX + linkSize.Width + S(6) + S(3) * hoverAmount), (int)linkY),
           linkColor, Flags);
       }
@@ -438,47 +539,60 @@ namespace OpenHardwareMonitor.GUI.Modern {
       if (model.HasHero) {
         y += S(18);
         anything = true;
-        string heroText = HeroText();
-        Size heroSize = TextRenderer.MeasureText(heroText, heroFont!, Size.Empty, Flags);
         float trendWidth = model.Trend != null && model.Trend.Length > 1
           ? Math.Min(S(180), inner * 0.46f) : 0;
-        float heroHeight = heroSize.Height + S(2) + labelFont!.Height;
-        if (g != null) {
-          float mix = severityMix.Value;
+        float heroHeight = heroFont!.Height + S(2) + labelFont!.Height;
+        RectangleF heroBlock = new RectangleF(x, y,
+          inner - (trendWidth > 0 ? trendWidth + S(8) : 0), heroHeight);
+        RectangleF area = trendWidth > 0
+          ? new RectangleF(width - pad - trendWidth, y + S(6), trendWidth,
+            heroHeight - S(6) - labelFont.Height - S(4))
+          : RectangleF.Empty;
+
+        if (drawing) {
+          heroRegion = ToControl(new RectangleF(x, y, heroBlock.Width, heroFont.Height));
+          trendRegion = trendWidth > 0
+            ? ToControl(RectangleF.Inflate(area, S(14), S(14)))
+            : RectangleF.Empty;
+        }
+
+        float mix = severityMix.Value;
+        if (drawing && Dirty(heroBlock)) {
+          string heroText = HeroText();
+          Size heroSize = TextRenderer.MeasureText(heroText, heroFont, Size.Empty, Flags);
           Color heroColor = ColorMath.Lerp(HeroColor(previousSeverity),
             HeroColor(model.HeroSeverity), mix);
-          TextRenderer.DrawText(g, heroText, heroFont!,
-            new Point((int)x, (int)y), heroColor, Flags);
-          float baseline = y + Theme.Ascent(heroFont!);
-          TextRenderer.DrawText(g, model.HeroUnit, unitFont!,
+          TextRenderer.DrawText(g!, heroText, heroFont, new Point((int)x, (int)y), heroColor, Flags);
+          float baseline = y + Theme.Ascent(heroFont);
+          TextRenderer.DrawText(g!, model.HeroUnit, unitFont!,
             new Point((int)(x + heroSize.Width + S(3)),
               (int)(baseline - Theme.Ascent(unitFont!))),
             theme.TextSecondary, Flags);
-
-          // The label stops short of the trend's caption.
-          float labelWidth = inner - (trendWidth > 0 ? trendWidth + S(16) : 0);
-          TextRenderer.DrawText(g, model.HeroLabel, labelFont,
-            new Rectangle((int)x, (int)(y + heroSize.Height + S(2)),
-              (int)Math.Max(S(40), labelWidth), labelFont.Height),
+          TextRenderer.DrawText(g!, model.HeroLabel, labelFont,
+            new Rectangle((int)x, (int)(y + heroFont.Height + S(2)),
+              (int)Math.Max(S(40), heroBlock.Width), labelFont.Height),
             theme.TextSecondary, Flags | TextFormatFlags.EndEllipsis);
+        }
 
-          if (trendWidth > 0) {
-            RectangleF area = new RectangleF(width - pad - trendWidth, y + S(6),
-              trendWidth, heroHeight - S(6) - labelFont.Height - S(4));
-            Color trendColor = ColorMath.Lerp(TrendColor(previousSeverity),
-              TrendColor(model.HeroSeverity), mix);
-            DrawTrend(g, area, model.Trend!, trendColor, MinimumTrendRange(),
-              trendReveal.Value);
-            TextRenderer.DrawText(g, model.TrendLabel, labelFont,
-              new Rectangle((int)area.Left, (int)(y + heroHeight - labelFont.Height),
-                (int)area.Width, labelFont.Height),
-              theme.TextTertiary, Flags | TextFormatFlags.Right);
-          }
+        if (drawing && trendWidth > 0 && Dirty(RectangleF.Inflate(area, S(14), S(14)))) {
+          Color trendColor = ColorMath.Lerp(TrendColor(previousSeverity),
+            TrendColor(model.HeroSeverity), mix);
+          DrawTrend(g!, area, model.Trend!, trendColor, MinimumTrendRange(),
+            trendReveal.Value);
+          TextRenderer.DrawText(g!, model.TrendLabel, labelFont,
+            new Rectangle((int)area.Left, (int)(y + heroHeight - labelFont.Height),
+              (int)area.Width, labelFont.Height),
+            theme.TextTertiary, Flags | TextFormatFlags.Right);
         }
         y += heroHeight;
+      } else if (drawing) {
+        heroRegion = RectangleF.Empty;
+        trendRegion = RectangleF.Empty;
       }
 
       // Secondary readings in a grid.
+      if (drawing)
+        metricBarRegions.Clear();
       if (model.Metrics.Count > 0) {
         y += S(18);
         anything = true;
@@ -492,53 +606,58 @@ namespace OpenHardwareMonitor.GUI.Modern {
           CardMetric metric = model.Metrics[i];
           float cx = x + (i % columns) * (cellWidth + S(16));
           float cy = y + (i / columns) * (cellHeight + S(14));
-          if (g != null) {
-            TextRenderer.DrawText(g, metric.Label, labelFont,
-              new Rectangle((int)cx, (int)cy, (int)cellWidth, labelFont.Height),
-              theme.TextSecondary, Flags | TextFormatFlags.EndEllipsis);
-            Color valueColor = metric.Severity == Severity.Normal
-              ? theme.Text : theme.ForSeverity(metric.Severity);
-            TextRenderer.DrawText(g, metric.Value, valueFont,
-              new Rectangle((int)cx, (int)(cy + labelFont.Height + S(3)),
-                (int)cellWidth, valueFont.Height),
-              valueColor, Flags | TextFormatFlags.EndEllipsis);
-            if (metric.Fraction.HasValue && i < metricBars.Count)
-              DrawBar(g, new RectangleF(cx,
-                cy + labelFont.Height + S(3) + valueFont.Height + S(6),
-                cellWidth, S(4)), metricBars[i].Value, metric.Severity);
-          }
+          RectangleF barRect = new RectangleF(cx,
+            cy + labelFont.Height + S(3) + valueFont.Height + S(6), cellWidth, S(4));
+          if (!drawing)
+            continue;
+          metricBarRegions.Add(metric.Fraction.HasValue ? ToControl(barRect) : RectangleF.Empty);
+          if (!Dirty(new RectangleF(cx, cy, cellWidth, cellHeight)))
+            continue;
+          TextRenderer.DrawText(g!, metric.Label, labelFont,
+            new Rectangle((int)cx, (int)cy, (int)cellWidth, labelFont.Height),
+            theme.TextSecondary, Flags | TextFormatFlags.EndEllipsis);
+          Color valueColor = metric.Severity == Severity.Normal
+            ? theme.Text : theme.ForSeverity(metric.Severity);
+          TextRenderer.DrawText(g!, metric.Value, valueFont,
+            new Rectangle((int)cx, (int)(cy + labelFont.Height + S(3)),
+              (int)cellWidth, valueFont.Height),
+            valueColor, Flags | TextFormatFlags.EndEllipsis);
+          if (metric.Fraction.HasValue && i < metricBars.Count)
+            DrawBar(g!, barRect, metricBars[i].Value, metric.Severity);
         }
         int rows = (count + columns - 1) / columns;
         y += rows * cellHeight + (rows - 1) * S(14);
       }
 
       // List rows (fans, drives, rails).
+      if (drawing)
+        rowBarRegions.Clear();
       if (model.Rows.Count > 0) {
         y += S(18);
         anything = true;
         for (int i = 0; i < model.Rows.Count; i++) {
           CardMetric row = model.Rows[i];
-          if (g != null) {
-            Size valueSize = TextRenderer.MeasureText(row.Value, rowValueFont!,
-              Size.Empty, Flags);
-            TextRenderer.DrawText(g, row.Label, rowFont!,
-              new Rectangle((int)x, (int)y,
-                (int)(inner - valueSize.Width - S(12)), rowFont!.Height),
-              theme.Text, Flags | TextFormatFlags.EndEllipsis);
-            Color valueColor = row.Severity == Severity.Normal
-              ? theme.TextSecondary : theme.ForSeverity(row.Severity);
-            TextRenderer.DrawText(g, row.Value, rowValueFont!,
-              new Point((int)(x + inner - valueSize.Width), (int)y),
-              valueColor, Flags);
+          float rowHeight = rowFont!.Height + (row.Fraction.HasValue ? S(8) : 0);
+          RectangleF barRect = new RectangleF(x, y + rowFont.Height + S(5), inner, S(3));
+          if (drawing) {
+            rowBarRegions.Add(row.Fraction.HasValue ? ToControl(barRect) : RectangleF.Empty);
+            if (Dirty(new RectangleF(x, y, inner, rowHeight))) {
+              Size valueSize = TextRenderer.MeasureText(row.Value, rowValueFont!,
+                Size.Empty, Flags);
+              TextRenderer.DrawText(g!, row.Label, rowFont,
+                new Rectangle((int)x, (int)y,
+                  (int)(inner - valueSize.Width - S(12)), rowFont.Height),
+                theme.Text, Flags | TextFormatFlags.EndEllipsis);
+              Color valueColor = row.Severity == Severity.Normal
+                ? theme.TextSecondary : theme.ForSeverity(row.Severity);
+              TextRenderer.DrawText(g!, row.Value, rowValueFont!,
+                new Point((int)(x + inner - valueSize.Width), (int)y),
+                valueColor, Flags);
+              if (row.Fraction.HasValue && i < rowBars.Count)
+                DrawBar(g!, barRect, rowBars[i].Value, row.Severity);
+            }
           }
-          y += rowFont!.Height;
-          if (row.Fraction.HasValue) {
-            if (g != null && i < rowBars.Count)
-              DrawBar(g, new RectangleF(x, y + S(5), inner, S(3)),
-                rowBars[i].Value, row.Severity);
-            y += S(8);
-          }
-          y += S(10);
+          y += rowHeight + S(10);
         }
         y -= S(10);
       }
@@ -549,8 +668,8 @@ namespace OpenHardwareMonitor.GUI.Modern {
         Size noteSize = TextRenderer.MeasureText(model.Note, labelFont!,
           new Size((int)inner, int.MaxValue),
           TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.WordBreak);
-        if (g != null)
-          TextRenderer.DrawText(g, model.Note, labelFont!,
+        if (drawing && Dirty(new RectangleF(x, y, inner, noteSize.Height)))
+          TextRenderer.DrawText(g!, model.Note, labelFont!,
             new Rectangle((int)x, (int)y, (int)inner, noteSize.Height),
             theme.TextSecondary, WrapFlags);
         y += noteSize.Height;
@@ -628,12 +747,12 @@ namespace OpenHardwareMonitor.GUI.Modern {
       g.SetClip(new RectangleF(area.Left - S(8), area.Top - S(12),
         area.Width * reveal + S(16), area.Height + S(24)), CombineMode.Intersect);
 
+      PointF[] line = points.ToArray();
       using (GraphicsPath fillPath = new GraphicsPath()) {
-        fillPath.AddLines(points.ToArray());
-        PointF last = points[points.Count - 1];
+        fillPath.AddLines(line);
+        PointF last = line[line.Length - 1];
         fillPath.AddLine(last, new PointF(last.X, area.Bottom));
-        fillPath.AddLine(new PointF(last.X, area.Bottom),
-          new PointF(points[0].X, area.Bottom));
+        fillPath.AddLine(new PointF(last.X, area.Bottom), new PointF(line[0].X, area.Bottom));
         fillPath.CloseFigure();
         using (LinearGradientBrush brush = new LinearGradientBrush(
           RectangleF.Inflate(area, 0, 1),
@@ -646,10 +765,10 @@ namespace OpenHardwareMonitor.GUI.Modern {
         pen.LineJoin = LineJoin.Round;
         pen.StartCap = LineCap.Round;
         pen.EndCap = LineCap.Round;
-        g.DrawLines(pen, points.ToArray());
+        g.DrawLines(pen, line);
       }
 
-      PointF end = points[points.Count - 1];
+      PointF end = line[line.Length - 1];
       float dot = S(3.5f);
       if (ping.IsAnimating) {
         float p = ping.Value;
