@@ -162,14 +162,23 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
       }
     }
 
+    // E_FAIL: PawnIOLib could not be called at all.
+    private const int LibraryUnavailable = unchecked((int)0x80004005);
+
+    /// <summary>
+    /// Runs a function of the module loaded into <paramref name="handle"/>.
+    /// </summary>
+    /// <param name="hresult">The HRESULT from pawnio_execute, negative on
+    /// failure; E_FAIL when the library could not be called.</param>
     public static bool TryExecute(IntPtr handle, string function,
-      ulong[] input, ulong[] output) {
+      ulong[] input, ulong[] output, out int hresult) {
+      hresult = LibraryUnavailable;
       try {
         if (!Resolve())
           return false;
-        int hr = executeFunction!(handle, function, input,
+        hresult = executeFunction!(handle, function, input,
           (IntPtr)input.Length, output, (IntPtr)output.Length, out _);
-        return hr >= 0;
+        return hresult >= 0;
       } catch (Exception) {
         return false;
       }

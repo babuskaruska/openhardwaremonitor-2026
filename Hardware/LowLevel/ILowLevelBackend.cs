@@ -56,6 +56,18 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
     bool TryReadIoPort(uint port, out byte value);
     bool WriteIoPort(uint port, byte value);
 
+    /// <summary>
+    /// Called by Super I/O detection once the chip at
+    /// <paramref name="registerPort"/> is in configuration mode with a valid
+    /// chip ID, and before detection leaves configuration mode. A backend
+    /// that confines port access to a chip's own address ranges discovers
+    /// them here; any other backend does nothing and returns false. The chip
+    /// must be left in configuration mode with its logical device selection
+    /// unchanged.
+    /// </summary>
+    /// <param name="detail">A line for the report, or null.</param>
+    bool PrepareSuperIoAccess(ushort registerPort, out string? detail);
+
     bool ReadPciConfig(uint pciAddress, uint regAddress, out uint value);
     bool WritePciConfig(uint pciAddress, uint regAddress, uint value);
 

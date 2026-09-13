@@ -303,6 +303,8 @@ namespace OpenHardwareMonitor.Hardware.LPC {
           port.NuvotonDisableIOSpaceLock();
         }
 
+        // restricted backends (PawnIO) unlock the chip's ranges in config mode
+        Ring0.PrepareSuperIoAccess(port.RegisterPort);
         port.WinbondNuvotonFintekExit();
 
         if (address != verify) {
@@ -461,6 +463,8 @@ namespace OpenHardwareMonitor.Hardware.LPC {
           gpioVerify = port.ReadWord(BASE_ADDRESS_REGISTER + 2);
         }
 
+        // restricted backends (PawnIO) unlock the chip's ranges in config mode
+        Ring0.PrepareSuperIoAccess(port.RegisterPort);
         port.IT87Exit();
 
         if (address != verify || address < 0x100 || (address & 0xF007) != 0) {

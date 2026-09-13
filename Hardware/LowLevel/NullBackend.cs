@@ -67,6 +67,11 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
       return false;
     }
 
+    public bool PrepareSuperIoAccess(ushort registerPort, out string? detail) {
+      detail = null;
+      return false;
+    }
+
     public bool ReadPciConfig(uint pciAddress, uint regAddress, out uint value) {
       value = 0;
       return false;
