@@ -182,6 +182,8 @@ namespace OpenHardwareMonitor.GUI {
       plotColorPalette[11] = Color.Olive;
       plotColorPalette[12] = Color.Firebrick;
       
+      InitializeModernInterface();
+
       computer.HardwareAdded += new HardwareEventHandler(HardwareAdded);
       computer.HardwareRemoved += new HardwareEventHandler(HardwareRemoved);        
 
@@ -582,7 +584,7 @@ namespace OpenHardwareMonitor.GUI {
             sensorPlotColors.TryGetValue(sensorNode.Sensor, out color))
             e.TextColor = color;
         } else {
-          e.TextColor = Color.DarkGray;
+          e.TextColor = uiTheme != null ? uiTheme.TextTertiary : Color.DarkGray;
         }
       }
     }
@@ -659,6 +661,7 @@ namespace OpenHardwareMonitor.GUI {
     private void timer_Tick(object sender, EventArgs e) {
       computer.Accept(updateVisitor);
       fanCurves.Update();
+      overview.UpdateValues();
       treeView.Invalidate();
       plotPanel.InvalidatePlot();
       systemTray.Redraw();
@@ -733,9 +736,9 @@ namespace OpenHardwareMonitor.GUI {
         X = settings.GetValue("mainForm.Location.X", Location.X),
         Y = settings.GetValue("mainForm.Location.Y", Location.Y),
         Width = settings.GetValue("mainForm.Width",
-          DpiHelper.LogicalToDeviceUnits(470)),
+          DpiHelper.LogicalToDeviceUnits(1120)),
         Height = settings.GetValue("mainForm.Height",
-          DpiHelper.LogicalToDeviceUnits(640))
+          DpiHelper.LogicalToDeviceUnits(780))
       };
 
       Rectangle fullWorkingArea = new Rectangle(int.MaxValue, int.MaxValue,

@@ -80,6 +80,9 @@ namespace OpenHardwareMonitor.GUI {
           break;
       }
 
+      // Crisp, theme-coloured vector icons instead of the 2013 bitmaps.
+      this.Image = Modern.ModernIcons.ForSensorType(sensorType);
+
       NodeAdded += new NodeEventHandler(TypeNode_NodeAdded);
       NodeRemoved += new NodeEventHandler(TypeNode_NodeRemoved);
 
