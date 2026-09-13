@@ -76,6 +76,12 @@ namespace OpenHardwareMonitor.Utilities {
     private readonly Node root;
     private readonly Computer computer;
     private readonly ISynchronizeInvoke uiThread;
+
+    /// <summary>
+    /// Held while capturing diagnostics, which reads hardware. The
+    /// application sets it to the sensor thread's lock.
+    /// </summary>
+    public object? HardwareLock { get; set; }
     private readonly PersistentSettings settings;
     private readonly Dictionary<string, string> resources;
     private readonly string accessToken;
@@ -665,12 +671,20 @@ namespace OpenHardwareMonitor.Utilities {
     /// and its quick rule pass run on the UI thread; serialization works on
     /// the copy, on this thread.
     /// </summary>
+    private T CaptureLocked<T>(Func<T> capture) {
+      object? hardwareLock = HardwareLock;
+      if (hardwareLock == null)
+        return capture();
+      lock (hardwareLock)
+        return capture();
+    }
+
     private void SendDiagnostics(HttpListenerResponse response, bool markdown,
       bool headOnly) {
       DiagnosticSnapshot? snapshot = OnUiThread(
-        () => DiagnosticSnapshot.Capture(computer, new DiagnosticCaptureOptions {
+        () => CaptureLocked(() => DiagnosticSnapshot.Capture(computer, new DiagnosticCaptureOptions {
           ApplicationName = "Open Hardware Monitor"
-        }), DiagnosticsTimeout);
+        })), DiagnosticsTimeout);
       if (snapshot == null) {
         SendText(response, 503, "Sensor data is temporarily unavailable.",
           headOnly);

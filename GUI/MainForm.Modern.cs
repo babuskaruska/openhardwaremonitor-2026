@@ -117,6 +117,46 @@ namespace OpenHardwareMonitor.GUI {
       overview.Visible = true;
     }
 
+    private SensorPoller poller = null!;
+
+    /// <summary>
+    /// Sensors are read on a background thread so the window never waits for
+    /// hardware. Called from the constructor once the computer is open.
+    /// </summary>
+    private void StartSensorPolling() {
+      UiThread.Initialize();
+      poller = new SensorPoller(computer, this, PollOnSensorThread, RefreshAfterPoll);
+      poller.Start();
+    }
+
+    private void StopSensorPolling() {
+      poller?.Stop();
+    }
+
+    /// <summary>Runs on the sensor thread after each update, under the hardware lock.</summary>
+    private void PollOnSensorThread() {
+      fanCurves.Update();
+      if (logSensors != null && logSensors.Value && delayCount >= 4)
+        logger.Log();
+      if (delayCount < 4)
+        delayCount++;
+    }
+
+    /// <summary>
+    /// Runs on the UI thread after each update while the sensor thread waits,
+    /// so nothing reads sensor values while they change. Work for views that
+    /// are not visible is skipped.
+    /// </summary>
+    private void RefreshAfterPoll() {
+      overview.UpdateValues();
+      if (splitContainer.Visible)
+        treeView.Invalidate();
+      if (showPlot != null && showPlot.Value)
+        plotPanel.InvalidatePlot();
+      systemTray.Redraw();
+      gadget?.Redraw();
+    }
+
     protected override void OnHandleCreated(EventArgs e) {
       base.OnHandleCreated(e);
       uiTheme?.ApplyWindowChrome(this);

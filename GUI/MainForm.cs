@@ -191,7 +191,7 @@ namespace OpenHardwareMonitor.GUI {
 
       Microsoft.Win32.SystemEvents.PowerModeChanged += PowerModeChanged;
 
-      timer.Enabled = true;
+      StartSensorPolling();
 
       showHiddenSensors = new UserOption("hiddenMenuItem", false,
         hiddenMenuItem, settings);
@@ -242,37 +242,37 @@ namespace OpenHardwareMonitor.GUI {
       readMainboardSensors = new UserOption("mainboardMenuItem", true, 
         mainboardMenuItem, settings);
       readMainboardSensors.Changed += delegate(object sender, EventArgs e) {
-        computer.MainboardEnabled = readMainboardSensors.Value;
+        poller.RunLocked(() => computer.MainboardEnabled = readMainboardSensors.Value);
       };
 
       readCpuSensors = new UserOption("cpuMenuItem", true,
         cpuMenuItem, settings);
       readCpuSensors.Changed += delegate(object sender, EventArgs e) {
-        computer.CPUEnabled = readCpuSensors.Value;
+        poller.RunLocked(() => computer.CPUEnabled = readCpuSensors.Value);
       };
 
       readRamSensors = new UserOption("ramMenuItem", true,
         ramMenuItem, settings);
       readRamSensors.Changed += delegate(object sender, EventArgs e) {
-        computer.RAMEnabled = readRamSensors.Value;
+        poller.RunLocked(() => computer.RAMEnabled = readRamSensors.Value);
       };
 
       readGpuSensors = new UserOption("gpuMenuItem", true,
         gpuMenuItem, settings);
       readGpuSensors.Changed += delegate(object sender, EventArgs e) {
-        computer.GPUEnabled = readGpuSensors.Value;
+        poller.RunLocked(() => computer.GPUEnabled = readGpuSensors.Value);
       };
 
       readFanControllersSensors = new UserOption("fanControllerMenuItem", true,
         fanControllerMenuItem, settings);
       readFanControllersSensors.Changed += delegate(object sender, EventArgs e) {
-        computer.FanControllerEnabled = readFanControllersSensors.Value;
+        poller.RunLocked(() => computer.FanControllerEnabled = readFanControllersSensors.Value);
       };
 
       readHddSensors = new UserOption("hddMenuItem", true, hddMenuItem,
         settings);
       readHddSensors.Changed += delegate(object sender, EventArgs e) {
-        computer.HDDEnabled = readHddSensors.Value;
+        poller.RunLocked(() => computer.HDDEnabled = readHddSensors.Value);
       };
 
       showGadget = new UserOption("gadgetMenuItem", false, gadgetMenuItem,
@@ -311,6 +311,7 @@ namespace OpenHardwareMonitor.GUI {
       themeInitialized = true;
 
       server = new HttpServer(root, computer, this, settings);
+      server.HardwareLock = poller.Sync;
       if (server.PlatformNotSupported) {
         webMenuItemSeparator.Visible = false;
         webMenuItem.Visible = false;
@@ -422,6 +423,7 @@ namespace OpenHardwareMonitor.GUI {
 
       // Make sure the settings are saved when the user logs off
       Microsoft.Win32.SystemEvents.SessionEnded += delegate {
+        StopSensorPolling();
         fanCurves.Release();
         computer.Close();
         SaveConfiguration();
@@ -434,7 +436,7 @@ namespace OpenHardwareMonitor.GUI {
       Microsoft.Win32.PowerModeChangedEventArgs e) {
 
       if (e.Mode == Microsoft.Win32.PowerModes.Resume) {
-        computer.Reset();
+        poller.RunLocked(() => computer.Reset());
       }
     }
 
@@ -659,22 +661,8 @@ namespace OpenHardwareMonitor.GUI {
 
     private int delayCount = 0;
     private void timer_Tick(object sender, EventArgs e) {
-      computer.Accept(updateVisitor);
-      fanCurves.Update();
-      overview.UpdateValues();
-      treeView.Invalidate();
-      plotPanel.InvalidatePlot();
-      systemTray.Redraw();
-      if (gadget != null)
-        gadget.Redraw();
-
-
-
-      if (logSensors != null && logSensors.Value && delayCount >= 4)
-        logger.Log();
-
-      if (delayCount < 4)
-        delayCount++;
+      // Sensors are polled on a background thread; see StartSensorPolling.
+      // This timer is no longer started.
     }
 
     /// <summary>
@@ -765,6 +753,7 @@ namespace OpenHardwareMonitor.GUI {
       Visible = false;      
       systemTray.IsMainIconEnabled = false;
       timer.Enabled = false;            
+      StopSensorPolling();
       fanCurves.Release();
       computer.Close();
       SaveConfiguration();
@@ -868,8 +857,10 @@ namespace OpenHardwareMonitor.GUI {
             defaultItem.Checked = control.ControlMode == ControlMode.Default;
             controlItem.DropDownItems.Add(defaultItem);
             defaultItem.Click += delegate(object obj, EventArgs args) {
-              fanCurves.RemoveCurve(node.Sensor);
-              control.SetDefault();
+              poller.RunLocked(() => {
+                fanCurves.RemoveCurve(node.Sensor);
+                control.SetDefault();
+              });
             };
             ToolStripMenuItem manualItem = new ToolStripMenuItem("Manual");
             controlItem.DropDownItems.Add(manualItem);
@@ -883,8 +874,10 @@ namespace OpenHardwareMonitor.GUI {
                   Math.Round(control.SoftwareValue) == i;
                 int softwareValue = i;
                 item.Click += delegate(object obj, EventArgs args) {
-                  fanCurves.RemoveCurve(node.Sensor);
-                  control.SetSoftware(softwareValue);
+                  poller.RunLocked(() => {
+                    fanCurves.RemoveCurve(node.Sensor);
+                    control.SetSoftware(softwareValue);
+                  });
                 };
               }
             }
@@ -919,7 +912,7 @@ namespace OpenHardwareMonitor.GUI {
     }
 
     private void saveReportMenuItem_Click(object sender, EventArgs e) {
-      string report = computer.GetReport();
+      string report = poller.RunLocked(() => computer.GetReport());
       if (saveFileDialog.ShowDialog() == DialogResult.OK) {
         using (TextWriter w = new StreamWriter(saveFileDialog.FileName)) {
           w.Write(report);
@@ -934,6 +927,15 @@ namespace OpenHardwareMonitor.GUI {
     }
 
     protected override void WndProc(ref Message m) {
+      // While the window is dragged or resized, hold animations so nothing
+      // competes with the move; they land where they belong afterwards.
+      const int WM_ENTERSIZEMOVE = 0x0231;
+      const int WM_EXITSIZEMOVE = 0x0232;
+      if (m.Msg == WM_ENTERSIZEMOVE)
+        Modern.Animator.Paused = true;
+      else if (m.Msg == WM_EXITSIZEMOVE)
+        Modern.Animator.Paused = false;
+
       const int WM_SYSCOMMAND = 0x112;
       const int SC_MINIMIZE = 0xF020;
       const int SC_CLOSE = 0xF060;
@@ -973,7 +975,7 @@ namespace OpenHardwareMonitor.GUI {
           fanCurves.SetCurve(controlSensor, form.Curve);
         } else if (fanCurves.HasCurve(controlSensor)) {
           fanCurves.RemoveCurve(controlSensor);
-          controlSensor.Control?.SetDefault();
+          poller.RunLocked(() => controlSensor.Control?.SetDefault());
         }
       }
     }
@@ -1009,7 +1011,7 @@ namespace OpenHardwareMonitor.GUI {
     private void sumbitReportMenuItem_Click(object sender, EventArgs e) 
     {
       ReportForm form = new ReportForm();
-      form.Report = computer.GetReport();
+      form.Report = poller.RunLocked(() => computer.GetReport());
       form.ShowDialog();      
     }
 
@@ -1018,14 +1020,15 @@ namespace OpenHardwareMonitor.GUI {
     /// Runs on the UI thread, which owns the sensor tree.
     /// </summary>
     private void exportDiagnosticsMenuItem_Click(object sender, EventArgs e) {
-      DiagnosticsExport.Run(Visible ? this : null, computer);
+      DiagnosticsExport.Run(Visible ? this : null, computer, poller.Sync);
     }
 
     private void resetMinMaxMenuItem_Click(object sender, EventArgs e) {
-      computer.Accept(new SensorVisitor(delegate(ISensor sensor) {
-        sensor.ResetMin();
-        sensor.ResetMax();
-      }));
+      poller.RunLocked(() => computer.Accept(new SensorVisitor(
+        delegate(ISensor sensor) {
+          sensor.ResetMin();
+          sensor.ResetMax();
+        })));
     }
 
     private void MainForm_MoveOrResize(object sender, EventArgs e) {
@@ -1041,7 +1044,7 @@ namespace OpenHardwareMonitor.GUI {
       // disable the fallback MainIcon during reset, otherwise icon visibility
       // might be lost 
       systemTray.IsMainIconEnabled = false;
-      computer.Reset();
+      poller.RunLocked(() => computer.Reset());
       // restore the MainIcon setting
       systemTray.IsMainIconEnabled = minimizeToTray.Value;
     }

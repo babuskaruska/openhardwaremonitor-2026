@@ -299,12 +299,16 @@ namespace OpenHardwareMonitor.GUI {
     }
 
     private void SensorAdded(ISensor sensor) {
+      if (UiThread.Redirect(() => SensorAdded(sensor)))
+        return;
       if (settings.GetValue(new Identifier(sensor.Identifier,
         "gadget").ToString(), false)) 
         Add(sensor);
     }
 
     private void SensorRemoved(ISensor sensor) {
+      if (UiThread.Redirect(() => SensorRemoved(sensor)))
+        return;
       if (Contains(sensor))
         Remove(sensor, false);
     }

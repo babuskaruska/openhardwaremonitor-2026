@@ -35,6 +35,12 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
     private readonly Sensor pcieThroughputTx;
     private readonly Control fanControl;
     private readonly bool useClientFanCoolers;
+
+    // NVML samples PCIe throughput over a short window and blocks while it
+    // does, per counter. Reading both counters on every poll made the GPU
+    // the slowest device to update, so throughput is sampled every few polls.
+    private const int PcieThroughputPollInterval = 5;
+    private int pcieThroughputPolls;
     // True while this session has commanded a manual fan level, so that exit
     // only restores automatic control when this program changed it.
     private bool wroteManualFanLevel;
@@ -349,7 +355,8 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
         }
       }
 
-      if (pcieThroughputRx != null) {
+      bool samplePcie = pcieThroughputPolls++ % PcieThroughputPollInterval == 0;
+      if (samplePcie && pcieThroughputRx != null) {
         if (NVML.NvmlDeviceGetPcieThroughput(device.Value, 
           NVML.NvmlPcieUtilCounter.RxBytes, out uint value) 
           == NVML.NvmlReturn.Success) 
@@ -359,7 +366,7 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
         }
       }
 
-      if (pcieThroughputTx != null) {
+      if (samplePcie && pcieThroughputTx != null) {
         if (NVML.NvmlDeviceGetPcieThroughput(device.Value,
           NVML.NvmlPcieUtilCounter.TxBytes, out uint value)
           == NVML.NvmlReturn.Success) {

@@ -36,12 +36,13 @@ namespace OpenHardwareMonitor.GUI {
     private static bool running;
 
     /// <summary>Must be called on the UI thread, which owns the sensor tree.</summary>
-    public static void Run(IWin32Window? owner, IComputer computer) {
+    public static void Run(IWin32Window? owner, IComputer computer,
+      object? hardwareLock = null) {
       if (running)
         return;
       running = true;
       try {
-        RunCore(owner, computer);
+        RunCore(owner, computer, hardwareLock);
       } catch (Exception ex) {
         // An export is never worth taking the application down for.
         ShowError(owner, ex);
@@ -50,11 +51,14 @@ namespace OpenHardwareMonitor.GUI {
       }
     }
 
-    private static void RunCore(IWin32Window? owner, IComputer computer) {
+    private static void RunCore(IWin32Window? owner, IComputer computer,
+      object? hardwareLock) {
       DiagnosticExportResult result;
       try {
         Cursor.Current = Cursors.WaitCursor;
-        DiagnosticSnapshot snapshot = DiagnosticSnapshot.Capture(computer,
+        DiagnosticSnapshot snapshot;
+        lock (hardwareLock ?? new object())
+          snapshot = DiagnosticSnapshot.Capture(computer,
           new DiagnosticCaptureOptions { ApplicationName = "Open Hardware Monitor" });
         result = DiagnosticExporter.WriteFiles(snapshot,
           DiagnosticExporter.DefaultDirectory);

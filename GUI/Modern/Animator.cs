@@ -112,7 +112,15 @@ namespace OpenHardwareMonitor.GUI.Modern {
       timer.Enabled = true;
     }
 
+    /// <summary>
+    /// Holds every animation, for example while the window is being dragged.
+    /// Values keep their targets and land there when resumed.
+    /// </summary>
+    public static bool Paused { get; set; }
+
     private static void OnTick(object? sender, EventArgs e) {
+      if (Paused)
+        return;
       for (int i = active.Count - 1; i >= 0; i--) {
         bool keep;
         try {

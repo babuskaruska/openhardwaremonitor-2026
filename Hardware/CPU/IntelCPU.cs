@@ -394,82 +394,114 @@ namespace OpenHardwareMonitor.Hardware.CPU {
       return r.ToString();
     }
 
+    // The three per-core readers below run while the thread is already on the
+    // core being read (see Update), so they use plain Rdmsr.
+
+    private void UpdateCoreTemperature(int core) {
+      // Valid when bit 31 is set; bits 22:16 hold the distance from TjMax.
+      if (Ring0.Rdmsr(IA32_THERM_STATUS_MSR, out uint eax, out _) &&
+        (eax & 0x80000000) != 0) {
+        float deltaT = (eax & 0x007F0000) >> 16;
+        float tjMax = coreTemperatures[core].Parameters[0].Value;
+        float tSlope = coreTemperatures[core].Parameters[1].Value;
+        coreTemperatures[core].Value = tjMax - tSlope * deltaT;
+      } else {
+        coreTemperatures[core].Value = null;
+      }
+    }
+
+    private void UpdatePackageTemperature() {
+      if (packageTemperature == null)
+        return;
+      if (Ring0.Rdmsr(IA32_PACKAGE_THERM_STATUS, out uint eax, out _) &&
+        (eax & 0x80000000) != 0) {
+        float deltaT = (eax & 0x007F0000) >> 16;
+        float tjMax = packageTemperature.Parameters[0].Value;
+        float tSlope = packageTemperature.Parameters[1].Value;
+        packageTemperature.Value = tjMax - tSlope * deltaT;
+      } else {
+        packageTemperature.Value = null;
+      }
+    }
+
+    /// <summary>Reads one core's clock; returns the bus clock it implies.</summary>
+    private double UpdateCoreClock(int core, double previousBusClock) {
+      if (!Ring0.Rdmsr(IA32_PERF_STATUS, out uint eax, out _)) {
+        // if IA32_PERF_STATUS is not available, assume TSC frequency
+        coreClocks[core].Value = (float)TimeStampCounterFrequency;
+        return previousBusClock;
+      }
+
+      double newBusClock = TimeStampCounterFrequency / timeStampCounterMultiplier;
+      // Expressed as a chain rather than an explicit architecture list so that
+      // a newly recognised architecture decodes with the modern layout by
+      // default. The old list-based switch sent anything unlisted to the
+      // Core-era decode, which is wrong.
+      if (microarchitecture == Microarchitecture.Nehalem) {
+        uint multiplier = eax & 0xff;
+        coreClocks[core].Value = (float)(multiplier * newBusClock);
+      } else if (UsesPlatformInfoMultiplier(microarchitecture)) {
+        // Sandy Bridge and everything since.
+        uint multiplier = (eax >> 8) & 0xff;
+        coreClocks[core].Value = (float)(multiplier * newBusClock);
+      } else {
+        double multiplier = ((eax >> 8) & 0x1f) + 0.5 * ((eax >> 14) & 1);
+        coreClocks[core].Value = (float)(multiplier * newBusClock);
+      }
+      return newBusClock;
+    }
+
     public override void Update() {
       base.Update();
 
-      for (int i = 0; i < coreTemperatures.Length; i++) {
-        uint eax, edx;
-        // if reading is valid
-        if (Ring0.RdmsrTx(IA32_THERM_STATUS_MSR, out eax, out edx,
-            cpuid[i][0].Affinity) && (eax & 0x80000000) != 0) 
-        {
-          // get the dist from tjMax from bits 22:16
-          float deltaT = ((eax & 0x007F0000) >> 16);
-          float tjMax = coreTemperatures[i].Parameters[0].Value;
-          float tSlope = coreTemperatures[i].Parameters[1].Value;
-          coreTemperatures[i].Value = tjMax - tSlope * deltaT;
-        } else {
-          coreTemperatures[i].Value = null;
-        }
-      }
-
-      if (packageTemperature != null) {
-        uint eax, edx;
-        // if reading is valid
-        if (Ring0.RdmsrTx(IA32_PACKAGE_THERM_STATUS, out eax, out edx,
-            cpuid[0][0].Affinity) && (eax & 0x80000000) != 0) 
-        {
-          // get the dist from tjMax from bits 22:16
-          float deltaT = ((eax & 0x007F0000) >> 16);
-          float tjMax = packageTemperature.Parameters[0].Value;
-          float tSlope = packageTemperature.Parameters[1].Value;
-          packageTemperature.Value = tjMax - tSlope * deltaT;
-        } else {
-          packageTemperature.Value = null;
-        }
-      }
-
-      // The MSR path needs a low-level backend. Without one,
-      // timeStampCounterMultiplier stays zero and there is nothing to scale,
-      // so fall back to the operating system's per-core clock accounting
-      // rather than reporting no clocks at all.
-      if (!HasTimeStampCounter || timeStampCounterMultiplier <= 0) {
+      // Core temperatures and clocks come from per-core MSRs, so the reading
+      // thread has to run on each core in turn. Move to each core once and
+      // read everything that core provides, then restore the affinity once.
+      // This used to change (and restore) the affinity for every single
+      // register and sleep 1 ms per core for the clocks: over 300 ms per poll
+      // on a 20-core Raptor Lake.
+      //
+      // Without a low-level backend there is no time stamp counter multiplier,
+      // so clocks fall back to the operating system's per-core accounting
+      // rather than reporting nothing.
+      bool clocksFromMsr = HasTimeStampCounter && timeStampCounterMultiplier > 0;
+      if (!clocksFromMsr)
         TryUpdateClocksFromOperatingSystem(coreClocks);
-      } else {
-        double newBusClock = 0;
-        uint eax, edx;
-        for (int i = 0; i < coreClocks.Length; i++) {
-          System.Threading.Thread.Sleep(1);
-          if (Ring0.RdmsrTx(IA32_PERF_STATUS, out eax, out edx, 
-            cpuid[i][0].Affinity)) 
-          {
-            newBusClock =
-              TimeStampCounterFrequency / timeStampCounterMultiplier;
-            // Expressed as a chain rather than an explicit architecture
-            // list so that a newly recognised architecture decodes with the
-            // modern layout by default. The old list-based switch sent
-            // anything unlisted to the Core-era decode, which is wrong.
-            if (microarchitecture == Microarchitecture.Nehalem) {
-              uint multiplier = eax & 0xff;
-              coreClocks[i].Value = (float)(multiplier * newBusClock);
-            } else if (UsesPlatformInfoMultiplier(microarchitecture)) {
-              // Sandy Bridge and everything since.
-              uint multiplier = (eax >> 8) & 0xff;
-              coreClocks[i].Value = (float)(multiplier * newBusClock);
-            } else {
-              double multiplier =
-                ((eax >> 8) & 0x1f) + 0.5 * ((eax >> 14) & 1);
-              coreClocks[i].Value = (float)(multiplier * newBusClock);
-            }
-          } else {
-            // if IA32_PERF_STATUS is not available, assume TSC frequency
-            coreClocks[i].Value = (float)TimeStampCounterFrequency;
+
+      int coreCount = Math.Min(cpuid.Length, Math.Max(coreTemperatures.Length,
+        clocksFromMsr ? coreClocks.Length : 0));
+      double newBusClock = 0;
+      bool pinned = false;
+      GroupAffinity original = GroupAffinity.Undefined;
+      try {
+        for (int i = 0; i < coreCount; i++) {
+          GroupAffinity previous = ThreadAffinity.Set(cpuid[i][0].Affinity);
+          if (!pinned) {
+            original = previous;
+            pinned = true;
           }
+
+          if (i < coreTemperatures.Length)
+            UpdateCoreTemperature(i);
+          if (i == 0 && packageTemperature != null)
+            UpdatePackageTemperature();
+          if (clocksFromMsr && i < coreClocks.Length)
+            newBusClock = UpdateCoreClock(i, newBusClock);
         }
-        if (newBusClock > 0) {
-          this.busClock.Value = (float)newBusClock;
-          ActivateSensor(this.busClock);
+        if (coreCount == 0 && packageTemperature != null && cpuid.Length > 0) {
+          GroupAffinity previous = ThreadAffinity.Set(cpuid[0][0].Affinity);
+          original = previous;
+          pinned = true;
+          UpdatePackageTemperature();
         }
+      } finally {
+        if (pinned)
+          ThreadAffinity.Set(original);
+      }
+
+      if (clocksFromMsr && newBusClock > 0) {
+        this.busClock.Value = (float)newBusClock;
+        ActivateSensor(this.busClock);
       }
 
       if (powerSensors != null) {

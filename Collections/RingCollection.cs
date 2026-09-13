@@ -196,7 +196,9 @@ namespace OpenHardwareMonitor.Collections {
 
         index++;
 
-        if (index == collection.size) {
+        // ">=" rather than "==": if the collection shrank since the last
+        // step, stop instead of reading past the end.
+        if (index >= collection.size) {
           index = -2;
           return false;
         }

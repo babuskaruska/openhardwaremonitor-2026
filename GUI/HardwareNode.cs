@@ -81,6 +81,8 @@ namespace OpenHardwareMonitor.GUI {
     }
 
     private void SensorRemoved(ISensor sensor) {
+      if (UiThread.Redirect(() => SensorRemoved(sensor)))
+        return;
       foreach (TypeNode typeNode in typeNodes)
         if (typeNode.SensorType == sensor.SensorType) { 
           SensorNode sensorNode = null;
@@ -115,6 +117,8 @@ namespace OpenHardwareMonitor.GUI {
     }
 
     private void SensorAdded(ISensor sensor) {
+      if (UiThread.Redirect(() => SensorAdded(sensor)))
+        return;
       foreach (TypeNode typeNode in typeNodes)
         if (typeNode.SensorType == sensor.SensorType) {
           InsertSorted(typeNode, sensor);
