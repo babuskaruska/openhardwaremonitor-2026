@@ -134,6 +134,7 @@ namespace OpenHardwareMonitor.GUI {
       systemTray = new SystemTray(computer, settings, unitManager);
       systemTray.HideShowCommand += hideShowClick;
       systemTray.ExitCommand += exitClick;
+      systemTray.ExportDiagnosticsCommand += exportDiagnosticsMenuItem_Click;
 
       if (Hardware.OperatingSystem.IsUnix) { // Unix
         treeView.RowHeight = Math.Max(treeView.RowHeight,
@@ -1007,6 +1008,14 @@ namespace OpenHardwareMonitor.GUI {
       ReportForm form = new ReportForm();
       form.Report = computer.GetReport();
       form.ShowDialog();      
+    }
+
+    /// <summary>
+    /// Menu bar "Export for AI", File > Export Diagnostics and the tray item.
+    /// Runs on the UI thread, which owns the sensor tree.
+    /// </summary>
+    private void exportDiagnosticsMenuItem_Click(object sender, EventArgs e) {
+      DiagnosticsExport.Run(Visible ? this : null, computer);
     }
 
     private void resetMinMaxMenuItem_Click(object sender, EventArgs e) {

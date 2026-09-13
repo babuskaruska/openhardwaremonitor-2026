@@ -54,7 +54,9 @@ namespace OpenHardwareMonitor.Hardware.HDD {
     private readonly Sensor temperature;
     private readonly Sensor[] temperatureSensors;
     private readonly Sensor availableSpare;
+    private readonly Sensor availableSpareThreshold;
     private readonly Sensor remainingLife;
+    private readonly Sensor mediaErrors;
     private readonly Sensor dataRead;
     private readonly Sensor dataWritten;
     private readonly Sensor powerOnHours;
@@ -106,6 +108,10 @@ namespace OpenHardwareMonitor.Hardware.HDD {
         this, settings);
       remainingLife = new Sensor("Remaining Life", 1, SensorType.Level,
         this, settings);
+      // A fixed limit set by the manufacturer rather than a live reading, so
+      // hidden by default. Diagnostics compare Available Spare against it.
+      availableSpareThreshold = new Sensor("Available Spare Threshold", 2,
+        true, SensorType.Level, this, null, settings);
 
       dataRead = new Sensor("Total Bytes Read", 0, SensorType.Data, this,
         settings);
@@ -118,6 +124,10 @@ namespace OpenHardwareMonitor.Hardware.HDD {
         settings);
       unsafeShutdowns = new Sensor("Unsafe Shutdowns", 2, SensorType.Factor,
         this, settings);
+      // "Media and Data Integrity Errors": unrecovered errors over the
+      // drive's lifetime. Anything above zero is worth knowing about.
+      mediaErrors = new Sensor("Media Errors", 3, SensorType.Factor, this,
+        settings);
 
       if (driveInfos.Length > 0)
         usedSpace = new Sensor("Used Space", 0, SensorType.Load, this,
@@ -238,6 +248,12 @@ namespace OpenHardwareMonitor.Hardware.HDD {
 
       unsafeShutdowns.Value = ReadUInt64(log, OffsetUnsafeShutdowns);
       ActivateSensor(unsafeShutdowns);
+
+      availableSpareThreshold.Value = log[OffsetAvailableSpareThreshold];
+      ActivateSensor(availableSpareThreshold);
+
+      mediaErrors.Value = ReadUInt64(log, OffsetMediaErrors);
+      ActivateSensor(mediaErrors);
     }
 
     private void UpdateUsedSpace() {

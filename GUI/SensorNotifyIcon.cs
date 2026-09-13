@@ -65,6 +65,13 @@ namespace OpenHardwareMonitor.GUI {
         sensorSystemTray.SendHideShowCommand();
       };
       contextMenu.Items.Add(hideShowItem);
+      // Pinned sensor icons replace the main tray icon, so they need the
+      // export too.
+      ToolStripMenuItem exportItem = new ToolStripMenuItem("Export for AI");
+      exportItem.Click += delegate(object obj, EventArgs args) {
+        sensorSystemTray.SendExportDiagnosticsCommand();
+      };
+      contextMenu.Items.Add(exportItem);
       contextMenu.Items.Add(new ToolStripSeparator());
       ToolStripMenuItem removeItem = new ToolStripMenuItem("Remove Sensor");
       removeItem.Click += delegate(object obj, EventArgs args) {

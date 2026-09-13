@@ -54,6 +54,7 @@ namespace OpenHardwareMonitor.GUI {
       this.fileMenuItem = new ToolStripMenuItem();
       this.saveReportMenuItem = new ToolStripMenuItem();
       this.sumbitReportMenuItem = new ToolStripMenuItem();
+      this.exportDiagnosticsMenuItem = new ToolStripMenuItem();
       this.MenuItem2 = new ToolStripSeparator();
       this.resetMenuItem = new ToolStripMenuItem();
       this.menuItem5 = new ToolStripMenuItem();
@@ -110,6 +111,7 @@ namespace OpenHardwareMonitor.GUI {
       this.runWebServerMenuItem = new ToolStripMenuItem();
       this.serverPortMenuItem = new ToolStripMenuItem();
       this.helpMenuItem = new ToolStripMenuItem();
+      this.exportForAIMenuItem = new ToolStripMenuItem();
       this.aboutMenuItem = new ToolStripMenuItem();
       this.treeContextMenu = new ContextMenuStrip(this.components);
       this.saveFileDialog = new SaveFileDialog();
@@ -174,10 +176,22 @@ namespace OpenHardwareMonitor.GUI {
         this.fileMenuItem,
         this.viewMenuItem,
         this.optionsMenuItem,
-        this.helpMenuItem});
+        this.helpMenuItem,
+        this.exportForAIMenuItem});
       this.mainMenu.Location = new System.Drawing.Point(0, 0);
       this.mainMenu.Name = "mainMenu";
+      this.mainMenu.ShowItemToolTips = true;
       this.mainMenu.TabIndex = 0;
+      //
+      // Export for AI: a top-level item with no drop-down, so a single click
+      // on the menu bar runs the export.
+      //
+      this.exportForAIMenuItem.Name = "exportForAIMenuItem";
+      this.exportForAIMenuItem.Text = "Export for AI";
+      this.exportForAIMenuItem.ToolTipText = "Save a diagnostics snapshot (Markdown " +
+        "and JSON) to Documents and copy the Markdown to the clipboard, ready " +
+        "to paste into an AI assistant.";
+      this.exportForAIMenuItem.Click += new System.EventHandler(this.exportDiagnosticsMenuItem_Click);
       //
       // File
       //
@@ -185,6 +199,7 @@ namespace OpenHardwareMonitor.GUI {
       this.fileMenuItem.DropDownItems.AddRange(new ToolStripItem[] {
         this.saveReportMenuItem,
         this.sumbitReportMenuItem,
+        this.exportDiagnosticsMenuItem,
         this.MenuItem2,
         this.resetMenuItem,
         this.menuItem5,
@@ -194,6 +209,8 @@ namespace OpenHardwareMonitor.GUI {
       this.saveReportMenuItem.Click += new System.EventHandler(this.saveReportMenuItem_Click);
       this.sumbitReportMenuItem.Text = "Submit Report...";
       this.sumbitReportMenuItem.Click += new System.EventHandler(this.sumbitReportMenuItem_Click);
+      this.exportDiagnosticsMenuItem.Text = "Export Diagnostics";
+      this.exportDiagnosticsMenuItem.Click += new System.EventHandler(this.exportDiagnosticsMenuItem_Click);
       this.resetMenuItem.Text = "Reset";
       this.resetMenuItem.Click += new System.EventHandler(this.resetClick);
       this.menuItem5.Text = "Hardware";
@@ -485,5 +502,7 @@ namespace OpenHardwareMonitor.GUI {
     private ToolStripMenuItem log1hMenuItem;
     private ToolStripMenuItem log2hMenuItem;
     private ToolStripMenuItem log6hMenuItem;
+    private ToolStripMenuItem exportDiagnosticsMenuItem;
+    private ToolStripMenuItem exportForAIMenuItem;
   }
 }

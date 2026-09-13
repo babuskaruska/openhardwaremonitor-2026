@@ -13,14 +13,18 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Security.Principal;
 using OpenHardwareMonitor.Hardware;
+using OpenHardwareMonitor.Hardware.Diagnostics;
 
 namespace OpenHardwareMonitor.Tools.SensorDump {
 
   /// <summary>
   /// Opens the sensor engine, polls once, and prints every hardware node and
-  /// sensor it found. Pass --report to also dump the full diagnostic report.
+  /// sensor it found. Pass --report to also dump the full diagnostic report,
+  /// or --export &lt;directory&gt; [--seconds N] to sample for N seconds and
+  /// write the same AI-ready diagnostics snapshot as the desktop application.
   /// </summary>
   internal static class Program {
 
@@ -45,9 +49,35 @@ namespace OpenHardwareMonitor.Tools.SensorDump {
       }
     }
 
+    private const int DefaultExportSeconds = 5;
+    private const int MaxExportSeconds = 3600;
+
     private static int Main(string[] args) {
-      bool wantReport = Array.Exists(args,
-        a => a.Equals("--report", StringComparison.OrdinalIgnoreCase));
+      bool wantReport = false;
+      string? exportDirectory = null;
+      int seconds = DefaultExportSeconds;
+
+      for (int i = 0; i < args.Length; i++) {
+        string arg = args[i];
+        if (arg.Equals("--report", StringComparison.OrdinalIgnoreCase)) {
+          wantReport = true;
+        } else if (arg.Equals("--export", StringComparison.OrdinalIgnoreCase)) {
+          if (i + 1 >= args.Length)
+            return Usage("--export needs a directory.");
+          exportDirectory = args[++i];
+        } else if (arg.Equals("--seconds", StringComparison.OrdinalIgnoreCase)) {
+          if (i + 1 >= args.Length || !int.TryParse(args[++i],
+            NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds) ||
+            seconds < 1 || seconds > MaxExportSeconds)
+            return Usage("--seconds needs a whole number from 1 to " +
+              MaxExportSeconds.ToString(CultureInfo.InvariantCulture) + ".");
+        } else if (arg == "--help" || arg == "-h" || arg == "/?") {
+          Usage(null);
+          return 0;
+        } else {
+          return Usage("Unknown argument: " + arg);
+        }
+      }
 
       Console.OutputEncoding = System.Text.Encoding.UTF8;
 
@@ -65,11 +95,24 @@ namespace OpenHardwareMonitor.Tools.SensorDump {
         PrintEnvironment();
         PrintTier();
 
-        // One pass to populate, a second so rate-derived sensors (load,
-        // energy-to-power deltas) have two samples to work from.
-        UpdateAll(computer);
-        System.Threading.Thread.Sleep(1200);
-        UpdateAll(computer);
+        if (exportDirectory != null) {
+          // Sample for a while so min/max and history mean something.
+          Console.WriteLine();
+          Console.WriteLine("== Sampling ==");
+          Console.WriteLine("  Updating once per second for " +
+            seconds.ToString(CultureInfo.InvariantCulture) + " s...");
+          UpdateAll(computer);
+          for (int s = 0; s < seconds; s++) {
+            System.Threading.Thread.Sleep(1000);
+            UpdateAll(computer);
+          }
+        } else {
+          // One pass to populate, a second so rate-derived sensors (load,
+          // energy-to-power deltas) have two samples to work from.
+          UpdateAll(computer);
+          System.Threading.Thread.Sleep(1200);
+          UpdateAll(computer);
+        }
 
         Console.WriteLine();
         Console.WriteLine("== Hardware ==");
@@ -81,10 +124,58 @@ namespace OpenHardwareMonitor.Tools.SensorDump {
           Console.WriteLine("== Report ==");
           Console.WriteLine(computer.GetReport());
         }
+
+        if (exportDirectory != null)
+          return Export(computer, exportDirectory);
       } finally {
         computer.Close();
       }
       return 0;
+    }
+
+    private static int Usage(string? error) {
+      if (error != null)
+        Console.Error.WriteLine("SensorDump: " + error);
+      Console.Error.WriteLine(
+        "Usage: SensorDump [--report] [--export <directory> [--seconds N]]");
+      Console.Error.WriteLine(
+        "  --report           also print the full text report");
+      Console.Error.WriteLine(
+        "  --export <dir>     write an AI-ready diagnostics snapshot (.md and .json)");
+      Console.Error.WriteLine(
+        "  --seconds N        with --export: sample once per second for N seconds " +
+        "first (default " + DefaultExportSeconds.ToString(CultureInfo.InvariantCulture) +
+        ")");
+      return error == null ? 0 : 2;
+    }
+
+    private static int Export(Computer computer, string directory) {
+      Console.WriteLine();
+      Console.WriteLine("== Diagnostics export ==");
+      try {
+        DiagnosticSnapshot snapshot = DiagnosticSnapshot.Capture(computer,
+          new DiagnosticCaptureOptions { ApplicationName = "SensorDump" });
+        DiagnosticExportResult result =
+          DiagnosticExporter.WriteFiles(snapshot, directory);
+
+        Console.WriteLine("  Markdown      : " + result.MarkdownPath);
+        Console.WriteLine("  JSON          : " + result.JsonPath);
+        Console.WriteLine(string.Format(CultureInfo.InvariantCulture,
+          "  Findings      : {0} critical, {1} warning, {2} info",
+          snapshot.CountFindings(DiagnosticSeverity.Critical),
+          snapshot.CountFindings(DiagnosticSeverity.Warning),
+          snapshot.CountFindings(DiagnosticSeverity.Info)));
+        foreach (DiagnosticFinding finding in snapshot.Findings)
+          Console.WriteLine("    [" + finding.Severity + "] " + finding.RuleId +
+            ": " + finding.Title +
+            (finding.HardwareName != null ? " (" + finding.HardwareName + ")" : ""));
+        return 0;
+      } catch (Exception ex) when (ex is IOException ||
+        ex is UnauthorizedAccessException || ex is ArgumentException ||
+        ex is NotSupportedException) {
+        Console.Error.WriteLine("  Export failed: " + ex.Message);
+        return 1;
+      }
     }
 
     private static void UpdateAll(Computer computer) {
