@@ -11,6 +11,7 @@
 #nullable enable
 
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 
@@ -137,6 +138,30 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
     public static string FormatVersion(uint version) {
       return (version >> 16) + "." + ((version >> 8) & 0xFF) + "." +
         (version & 0xFF);
+    }
+
+    /// <summary>
+    /// The installed PawnIO release, such as "2.2.0", for display. On the test
+    /// PC pawnio_version reported 2.0.0 for PawnIO 2.2.0, so the product
+    /// version of the DLL is preferred and the packed number is the fallback.
+    /// </summary>
+    public static string? DisplayVersion {
+      get {
+        uint version = Version;
+        if (version == 0)
+          return null;
+        try {
+          string? path = LibraryPath;
+          if (path != null) {
+            string? product = FileVersionInfo.GetVersionInfo(path).ProductVersion;
+            if (!string.IsNullOrWhiteSpace(product))
+              return product.Trim();
+          }
+        } catch (Exception) {
+          // Fall back to the packed version below.
+        }
+        return FormatVersion(version);
+      }
     }
 
     /// <summary>

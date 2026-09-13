@@ -108,7 +108,8 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
       return Create(version, isAmd.Value, PawnIOLib.GetModuleSearchPaths(),
         File.Exists, DefaultModulesDirectory, isElevated.Value,
         HardwareAccess.Tier,
-        HardwareAccess.SupportsModelSpecificRegisters && HardwareAccess.SupportsIoPort);
+        HardwareAccess.SupportsModelSpecificRegisters && HardwareAccess.SupportsIoPort,
+        PawnIOLib.DisplayVersion);
     }
 
     /// <summary>The per-user folder the module installer writes to.</summary>
@@ -122,7 +123,8 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
     /// are loaded in this process.</param>
     internal static PawnIoSetupStatus Create(uint driverVersion, bool amdProcessor,
       IEnumerable<string> searchDirectories, Func<string, bool> fileExists,
-      string modulesDirectory, bool elevated, AccessTier tier, bool modulesActive) {
+      string modulesDirectory, bool elevated, AccessTier tier, bool modulesActive,
+      string? displayVersion = null) {
 
       IReadOnlyList<string> required = GetRequiredModules(amdProcessor);
       List<string> missing = new List<string>();
@@ -132,7 +134,7 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
 
       bool driverInstalled = driverVersion != 0;
       return new PawnIoSetupStatus(driverInstalled,
-        driverInstalled ? PawnIOLib.FormatVersion(driverVersion) : null,
+        driverInstalled ? displayVersion ?? PawnIOLib.FormatVersion(driverVersion) : null,
         required, missing, modulesDirectory, elevated, tier,
         elevated && tier == AccessTier.Deep && modulesActive);
     }

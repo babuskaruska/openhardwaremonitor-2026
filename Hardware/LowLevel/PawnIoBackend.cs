@@ -106,7 +106,7 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
       }
 
       report.AppendLine("PawnIOLib " +
-        PawnIOLib.FormatVersion(PawnIOLib.Version) + " at " +
+        PawnIOLib.DisplayVersion + " at " +
         PawnIOLib.LibraryPath);
 
       msrModule = TryOpenModule(GetMsrModuleForCurrentProcessor(),
