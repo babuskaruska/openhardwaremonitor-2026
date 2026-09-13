@@ -125,8 +125,13 @@ namespace OpenHardwareMonitor {
       return SystemColorMode.System;
     }
 
-    private static readonly System.Diagnostics.Stopwatch uptime =
-      System.Diagnostics.Stopwatch.StartNew();
+    // From the process start time, not a static Stopwatch: without a static
+    // constructor the runtime may create static fields on first use, which
+    // was only at exit, so every run logged an uptime of zero.
+    private static TimeSpan ProcessUptime() {
+      using (System.Diagnostics.Process process = System.Diagnostics.Process.GetCurrentProcess())
+        return DateTime.Now - process.StartTime;
+    }
 
     /// <summary>Sensor access is logged once the hardware is open (see SensorPoller).</summary>
     private static void LogStart() {
@@ -136,7 +141,7 @@ namespace OpenHardwareMonitor {
         (facts.IsElevated == true ? "as administrator." : "not as administrator."));
       Application.ApplicationExit += delegate {
         ApplicationLog.Info("Open Hardware Monitor stopped after " +
-          EnvironmentFacts.FormatDuration(uptime.Elapsed) + ".");
+          EnvironmentFacts.FormatDuration(ProcessUptime()) + ".");
       };
     }
 
