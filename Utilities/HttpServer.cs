@@ -25,6 +25,7 @@ using System.Text.Json;
 using System.Threading;
 using OpenHardwareMonitor.GUI;
 using OpenHardwareMonitor.Hardware;
+using OpenHardwareMonitor.Hardware.Diagnostics;
 
 namespace OpenHardwareMonitor.Utilities {
 
@@ -57,6 +58,9 @@ namespace OpenHardwareMonitor.Utilities {
     // UI thread while that thread is shutting the server down gives up first
     // instead of deadlocking.
     private static readonly TimeSpan SnapshotTimeout = TimeSpan.FromSeconds(1);
+    // A diagnostics capture also builds the full text report, which queries
+    // drives, so it gets longer - but still less than StopTimeout.
+    private static readonly TimeSpan DiagnosticsTimeout = TimeSpan.FromSeconds(1.5);
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(2);
 
     private const string ContentSecurityPolicy =
@@ -309,6 +313,12 @@ namespace OpenHardwareMonitor.Utilities {
         case "data.json":
           SendJson(response, BuildLegacyDocument, headOnly);
           return;
+        case "api/v1/diagnostics":
+          SendDiagnostics(response, false, headOnly);
+          return;
+        case "api/v1/diagnostics.md":
+          SendDiagnostics(response, true, headOnly);
+          return;
       }
 
       if (resources.TryGetValue(path, out string? resourceName)) {
@@ -354,7 +364,7 @@ namespace OpenHardwareMonitor.Utilities {
 
     // ---- snapshots ------------------------------------------------------------
 
-    private byte[]? OnUiThread(Func<byte[]> build) {
+    private T? OnUiThread<T>(Func<T> build, TimeSpan timeout) where T : class {
       if (!uiThread.InvokeRequired)
         return build();
 
@@ -366,11 +376,11 @@ namespace OpenHardwareMonitor.Utilities {
         return null;   // the form is closing
       }
 
-      if (!pending.AsyncWaitHandle.WaitOne(SnapshotTimeout))
+      if (!pending.AsyncWaitHandle.WaitOne(timeout))
         return null;
 
       try {
-        return uiThread.EndInvoke(pending) as byte[];
+        return uiThread.EndInvoke(pending) as T;
       } catch (Exception) {
         return null;
       }
@@ -639,7 +649,7 @@ namespace OpenHardwareMonitor.Utilities {
 
     private void SendJson(HttpListenerResponse response, Func<byte[]> build,
       bool headOnly) {
-      byte[]? body = OnUiThread(build);
+      byte[]? body = OnUiThread(build, SnapshotTimeout);
       if (body == null) {
         SendText(response, 503, "Sensor data is temporarily unavailable.",
           headOnly);
@@ -647,6 +657,41 @@ namespace OpenHardwareMonitor.Utilities {
       }
       response.AddHeader("Cache-Control", "no-store");
       Send(response, 200, "application/json; charset=utf-8", body, headOnly);
+    }
+
+    /// <summary>
+    /// /api/v1/diagnostics (JSON) and /api/v1/diagnostics.md (Markdown): the
+    /// same snapshot as the desktop "Export for AI" command. Only the capture
+    /// and its quick rule pass run on the UI thread; serialization works on
+    /// the copy, on this thread.
+    /// </summary>
+    private void SendDiagnostics(HttpListenerResponse response, bool markdown,
+      bool headOnly) {
+      DiagnosticSnapshot? snapshot = OnUiThread(
+        () => DiagnosticSnapshot.Capture(computer, new DiagnosticCaptureOptions {
+          ApplicationName = "Open Hardware Monitor"
+        }), DiagnosticsTimeout);
+      if (snapshot == null) {
+        SendText(response, 503, "Sensor data is temporarily unavailable.",
+          headOnly);
+        return;
+      }
+
+      byte[] body;
+      try {
+        body = markdown
+          ? Encoding.UTF8.GetBytes(DiagnosticMarkdownWriter.ToMarkdown(snapshot))
+          : DiagnosticJsonWriter.ToUtf8Bytes(snapshot);
+      } catch (Exception) {
+        SendText(response, 500, "The diagnostics could not be generated.",
+          headOnly);
+        return;
+      }
+
+      response.AddHeader("Cache-Control", "no-store");
+      Send(response, 200, markdown
+        ? "text/markdown; charset=utf-8"
+        : "application/json; charset=utf-8", body, headOnly);
     }
 
     private static void SendText(HttpListenerResponse response, int status,

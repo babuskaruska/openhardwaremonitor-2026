@@ -46,6 +46,11 @@ namespace OpenHardwareMonitor.GUI {
         SendHideShowCommand();
       };
       contextMenu.Items.Add(hideShowItem);
+      ToolStripMenuItem exportItem = new ToolStripMenuItem("Export for AI");
+      exportItem.Click += delegate(object obj, EventArgs args) {
+        SendExportDiagnosticsCommand();
+      };
+      contextMenu.Items.Add(exportItem);
       contextMenu.Items.Add(new ToolStripSeparator());
       ToolStripMenuItem exitItem = new ToolStripMenuItem("Exit");
       exitItem.Click += delegate(object obj, EventArgs args) {
@@ -146,6 +151,13 @@ namespace OpenHardwareMonitor.GUI {
     public void SendHideShowCommand() {
       if (HideShowCommand != null)
         HideShowCommand(this, null);
+    }
+
+    public event EventHandler ExportDiagnosticsCommand;
+
+    public void SendExportDiagnosticsCommand() {
+      if (ExportDiagnosticsCommand != null)
+        ExportDiagnosticsCommand(this, EventArgs.Empty);
     }
 
     public event EventHandler ExitCommand;
