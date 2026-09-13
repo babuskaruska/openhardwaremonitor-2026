@@ -100,7 +100,7 @@ jobs:
           name: OpenHardwareMonitor
           path: dist
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           name: Open Hardware Monitor 2026 ${{ github.ref_name }}
           body_path: .github/release-notes.md
