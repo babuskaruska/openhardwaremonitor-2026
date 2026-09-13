@@ -34,6 +34,10 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
     private readonly Sensor pcieThroughputRx;
     private readonly Sensor pcieThroughputTx;
     private readonly Control fanControl;
+    private readonly bool useClientFanCoolers;
+    // True while this session has commanded a manual fan level, so that exit
+    // only restores automatic control when this program changed it.
+    private bool wroteManualFanLevel;
 
     public NvidiaGPU(int adapterIndex, NvPhysicalGpuHandle handle,
       NvDisplayHandle? displayHandle, ISettings settings)
@@ -83,14 +87,32 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
       memoryAvail = new Sensor("GPU Memory Total", 3, SensorType.SmallData, this, settings);
       control = new Sensor("GPU Fan", 0, SensorType.Control, this, settings);
 
+      // Fan control. GetCoolerSettings/SetCoolerLevels is the pre-Turing
+      // interface and returns NOT_SUPPORTED on current GPUs, so fan control
+      // silently disappeared on them; the client fan cooler interface is the
+      // replacement.
       NvGPUCoolerSettings coolerSettings = GetCoolerSettings();
+      NvFanCoolersStatus coolersStatus = GetFanCoolersStatus();
       if (coolerSettings.Count > 0) {
         fanControl = new Control(control, settings,
-          coolerSettings.Cooler[0].DefaultMin, 
+          coolerSettings.Cooler[0].DefaultMin,
           coolerSettings.Cooler[0].DefaultMax);
+      } else if (coolersStatus.Count > 0 &&
+        NVAPI.NvAPI_GPU_ClientFanCoolersGetControl != null &&
+        NVAPI.NvAPI_GPU_ClientFanCoolersSetControl != null) {
+        useClientFanCoolers = true;
+        fanControl = new Control(control, settings,
+          coolersStatus.Items[0].CurrentMinLevel,
+          coolersStatus.Items[0].CurrentMaxLevel);
+      }
+      if (fanControl != null) {
         fanControl.ControlModeChanged += ControlModeChanged;
         fanControl.SoftwareControlValueChanged += SoftwareControlValueChanged;
-        ControlModeChanged(fanControl);
+        // Only re-apply a manual level chosen in an earlier session. Default
+        // means hands off: forcing automatic mode at every start would fight
+        // any other utility that manages the fans.
+        if (fanControl.ControlMode == ControlMode.Software)
+          ControlModeChanged(fanControl);
         control.Control = fanControl;
       }
 
@@ -600,35 +622,79 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
     }
 
     private void SoftwareControlValueChanged(IControl control) {
-      NvGPUCoolerLevels coolerLevels = new NvGPUCoolerLevels();
-      coolerLevels.Version = NVAPI.GPU_COOLER_LEVELS_VER;
-      coolerLevels.Levels = new NvLevel[NVAPI.MAX_COOLER_PER_GPU];
-      coolerLevels.Levels[0].Level = (int)control.SoftwareValue;
-      coolerLevels.Levels[0].Policy = 1;
-      NVAPI.NvAPI_GPU_SetCoolerLevels(handle, 0, ref coolerLevels);
+      if (control.ControlMode != ControlMode.Software)
+        return;
+
+      // Never command a level outside what the hardware reports as valid,
+      // in particular never below the minimum, which could stop the fans.
+      float level = Math.Max(control.MinSoftwareValue,
+        Math.Min(control.MaxSoftwareValue, control.SoftwareValue));
+
+      if (useClientFanCoolers) {
+        if (!SetClientFanCoolers((uint)Math.Round(level),
+          NvFanCoolersControlMode.Manual))
+          return;
+      } else if (NVAPI.NvAPI_GPU_SetCoolerLevels != null) {
+        NvGPUCoolerLevels coolerLevels = new NvGPUCoolerLevels();
+        coolerLevels.Version = NVAPI.GPU_COOLER_LEVELS_VER;
+        coolerLevels.Levels = new NvLevel[NVAPI.MAX_COOLER_PER_GPU];
+        coolerLevels.Levels[0].Level = (int)Math.Round(level);
+        coolerLevels.Levels[0].Policy = 1;
+        if (NVAPI.NvAPI_GPU_SetCoolerLevels(handle, 0, ref coolerLevels)
+          != NvStatus.OK)
+          return;
+      } else {
+        return;
+      }
+      wroteManualFanLevel = true;
     }
 
     private void ControlModeChanged(IControl control) {
       switch (control.ControlMode) {
-        case ControlMode.Undefined:
-          return;
         case ControlMode.Default:
           SetDefaultFanSpeed();
           break;
         case ControlMode.Software:
           SoftwareControlValueChanged(control);
           break;
-        default:
-          return;
       }
     }
 
+    /// <summary>Hands the fans back to automatic driver control.</summary>
     private void SetDefaultFanSpeed() {
-      NvGPUCoolerLevels coolerLevels = new NvGPUCoolerLevels();
-      coolerLevels.Version = NVAPI.GPU_COOLER_LEVELS_VER;
-      coolerLevels.Levels = new NvLevel[NVAPI.MAX_COOLER_PER_GPU];
-      coolerLevels.Levels[0].Policy = 0x20;
-      NVAPI.NvAPI_GPU_SetCoolerLevels(handle, 0, ref coolerLevels);
+      if (useClientFanCoolers) {
+        SetClientFanCoolers(0, NvFanCoolersControlMode.Auto);
+      } else if (NVAPI.NvAPI_GPU_SetCoolerLevels != null) {
+        NvGPUCoolerLevels coolerLevels = new NvGPUCoolerLevels();
+        coolerLevels.Version = NVAPI.GPU_COOLER_LEVELS_VER;
+        coolerLevels.Levels = new NvLevel[NVAPI.MAX_COOLER_PER_GPU];
+        coolerLevels.Levels[0].Policy = 0x20;
+        NVAPI.NvAPI_GPU_SetCoolerLevels(handle, 0, ref coolerLevels);
+      }
+      wroteManualFanLevel = false;
+    }
+
+    /// <summary>
+    /// Sets every cooler to one level and mode. The current state is read first
+    /// so cooler ids and count come from the driver rather than being assumed.
+    /// </summary>
+    private bool SetClientFanCoolers(uint level, NvFanCoolersControlMode mode) {
+      if (NVAPI.NvAPI_GPU_ClientFanCoolersGetControl == null ||
+        NVAPI.NvAPI_GPU_ClientFanCoolersSetControl == null)
+        return false;
+
+      NvFanCoolersControl state = NVAPI.CreateFanCoolersControl();
+      if (NVAPI.NvAPI_GPU_ClientFanCoolersGetControl(handle, ref state)
+        != NvStatus.OK)
+        return false;
+
+      int count = (int)Math.Min(state.Count, (uint)state.Items.Length);
+      for (int i = 0; i < count; i++) {
+        state.Items[i].Level = level;
+        state.Items[i].ControlMode = mode;
+      }
+      return NVAPI.NvAPI_GPU_ClientFanCoolersSetControl(handle, ref state)
+        == NvStatus.OK;
     }
 
     public override void Close() {
@@ -637,7 +703,11 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
         this.fanControl.SoftwareControlValueChanged -=
           SoftwareControlValueChanged;
 
-        if (this.fanControl.ControlMode != ControlMode.Undefined)
+        // Restore automatic control only if this session commanded a manual
+        // level. The previous test (mode is not Undefined) also forced
+        // automatic mode on exit for anyone who had merely picked Default,
+        // overriding whatever other utility was managing the fans.
+        if (wroteManualFanLevel)
           SetDefaultFanSpeed();
       }
       base.Close();

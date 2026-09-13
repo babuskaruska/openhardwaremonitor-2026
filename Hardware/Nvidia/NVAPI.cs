@@ -294,6 +294,38 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
     public uint Reserved8;
   }
 
+  /// <summary>
+  /// NV_GPU_CLIENT_FAN_COOLERS_CONTROL, version 1: fan control for Turing and
+  /// later. The legacy GetCoolerSettings/SetCoolerLevels pair returns
+  /// NOT_SUPPORTED on these GPUs. Layout verified with a read-only probe on
+  /// an RTX 3070: 1452 bytes, two coolers reported.
+  /// </summary>
+  [StructLayout(LayoutKind.Sequential, Pack = 8)]
+  internal struct NvFanCoolersControl {
+    public uint Version;
+    public uint Reserved;
+    public uint Count;
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
+    public uint[] Reserved2;
+    [MarshalAs(UnmanagedType.ByValArray,
+      SizeConst = NVAPI.MAX_FAN_COOLERS_STATUS_ITEMS)]
+    public NvFanCoolersControlItem[] Items;
+  }
+
+  [StructLayout(LayoutKind.Sequential, Pack = 8)]
+  internal struct NvFanCoolersControlItem {
+    public uint CoolerId;
+    public uint Level;
+    public NvFanCoolersControlMode ControlMode;
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
+    public uint[] Reserved;
+  }
+
+  internal enum NvFanCoolersControlMode : uint {
+    Auto = 0,
+    Manual = 1
+  }
+
   internal class NVAPI {
 
     public const int MAX_PHYSICAL_GPUS = 64;
@@ -329,6 +361,8 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
       Marshal.SizeOf(typeof(NvGPUCoolerLevels)) | 0x10000;
     public static readonly uint GPU_FAN_COOLERS_STATUS_VER = (uint)
       Marshal.SizeOf(typeof(NvFanCoolersStatus)) | 0x10000;
+    public static readonly uint GPU_FAN_COOLERS_CONTROL_VER = (uint)
+      Marshal.SizeOf(typeof(NvFanCoolersControl)) | 0x10000;
 
     private delegate IntPtr nvapi_QueryInterfaceDelegate(uint id);
 
@@ -416,6 +450,14 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
     public delegate NvStatus NvAPI_GPU_ClientFanCoolersGetStatusDelegate(
       NvPhysicalGpuHandle gpuHandle, ref NvFanCoolersStatus fanCoolersStatus);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate NvStatus NvAPI_GPU_ClientFanCoolersGetControlDelegate(
+      NvPhysicalGpuHandle gpuHandle, ref NvFanCoolersControl control);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate NvStatus NvAPI_GPU_ClientFanCoolersSetControlDelegate(
+      NvPhysicalGpuHandle gpuHandle, ref NvFanCoolersControl control);
+
     private static readonly bool available;
     private static readonly nvapi_QueryInterfaceDelegate nvapi_QueryInterface;
     private static readonly NvAPI_InitializeDelegate NvAPI_Initialize;
@@ -456,6 +498,24 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
       NvAPI_GPU_GetBusId;
     public static readonly NvAPI_GPU_ClientFanCoolersGetStatusDelegate
       NvAPI_GPU_ClientFanCoolersGetStatus;
+    public static readonly NvAPI_GPU_ClientFanCoolersGetControlDelegate
+      NvAPI_GPU_ClientFanCoolersGetControl;
+    public static readonly NvAPI_GPU_ClientFanCoolersSetControlDelegate
+      NvAPI_GPU_ClientFanCoolersSetControl;
+
+    /// <summary>
+    /// A control structure with every embedded array allocated, which the
+    /// marshaller requires for fixed-size arrays inside nested structs.
+    /// </summary>
+    public static NvFanCoolersControl CreateFanCoolersControl() {
+      NvFanCoolersControl control = new NvFanCoolersControl();
+      control.Version = GPU_FAN_COOLERS_CONTROL_VER;
+      control.Reserved2 = new uint[8];
+      control.Items = new NvFanCoolersControlItem[MAX_FAN_COOLERS_STATUS_ITEMS];
+      for (int i = 0; i < control.Items.Length; i++)
+        control.Items[i].Reserved = new uint[8];
+      return control;
+    }
 
     private NVAPI() { }
 
@@ -534,6 +594,8 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
         GetDelegate(0x2DDFB66E, out NvAPI_GPU_GetPCIIdentifiers);
         GetDelegate(0x1BE0B8E5, out NvAPI_GPU_GetBusId);
         GetDelegate(0x35AED5E8, out NvAPI_GPU_ClientFanCoolersGetStatus);
+        GetDelegate(0x814B209F, out NvAPI_GPU_ClientFanCoolersGetControl);
+        GetDelegate(0xA58971A5, out NvAPI_GPU_ClientFanCoolersSetControl);
 
         available = true;
       }

@@ -1,0 +1,13 @@
+<Solution>
+  <Project Path="OpenHardwareMonitor.csproj" />
+  <Project Path="OpenHardwareMonitorLib.csproj" />
+  <Folder Name="/External/">
+    <Project Path="External/Aga.Controls/Aga.Controls.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OpenHardwareMonitor.Tests/OpenHardwareMonitor.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/SensorDump/SensorDump.csproj" />
+  </Folder>
+</Solution>

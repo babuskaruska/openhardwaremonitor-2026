@@ -68,6 +68,7 @@ namespace OpenHardwareMonitor.GUI {
     private UserOption logSensors;
     private UserRadioGroup loggingInterval;
     private Logger logger;
+    private FanCurveController fanCurves;
 
     private bool selectionDragging = false;
 
@@ -157,6 +158,13 @@ namespace OpenHardwareMonitor.GUI {
       }
 
       logger = new Logger(computer);
+
+      // Temperature-driven fan curves, set from a fan control context menu.
+      // Every fan this drove is handed back to the hardware however the process
+      // ends, including Environment.Exit from the crash handler, which never
+      // reaches FormClosed.
+      fanCurves = new FanCurveController(computer, settings);
+      AppDomain.CurrentDomain.ProcessExit += delegate { fanCurves.Release(); };
 
       plotColorPalette = new Color[13];
       plotColorPalette[0] = Color.Blue;
@@ -411,6 +419,7 @@ namespace OpenHardwareMonitor.GUI {
 
       // Make sure the settings are saved when the user logs off
       Microsoft.Win32.SystemEvents.SessionEnded += delegate {
+        fanCurves.Release();
         computer.Close();
         SaveConfiguration();
         if (runWebServer.Value) 
@@ -648,6 +657,7 @@ namespace OpenHardwareMonitor.GUI {
     private int delayCount = 0;
     private void timer_Tick(object sender, EventArgs e) {
       computer.Accept(updateVisitor);
+      fanCurves.Update();
       treeView.Invalidate();
       plotPanel.InvalidatePlot();
       systemTray.Redraw();
@@ -751,6 +761,7 @@ namespace OpenHardwareMonitor.GUI {
       Visible = false;      
       systemTray.IsMainIconEnabled = false;
       timer.Enabled = false;            
+      fanCurves.Release();
       computer.Close();
       SaveConfiguration();
       if (runWebServer.Value)
@@ -853,6 +864,7 @@ namespace OpenHardwareMonitor.GUI {
             defaultItem.Checked = control.ControlMode == ControlMode.Default;
             controlItem.DropDownItems.Add(defaultItem);
             defaultItem.Click += delegate(object obj, EventArgs args) {
+              fanCurves.RemoveCurve(node.Sensor);
               control.SetDefault();
             };
             ToolStripMenuItem manualItem = new ToolStripMenuItem("Manual");
@@ -867,10 +879,18 @@ namespace OpenHardwareMonitor.GUI {
                   Math.Round(control.SoftwareValue) == i;
                 int softwareValue = i;
                 item.Click += delegate(object obj, EventArgs args) {
+                  fanCurves.RemoveCurve(node.Sensor);
                   control.SetSoftware(softwareValue);
                 };
               }
             }
+            ToolStripMenuItem curveItem = new ToolStripMenuItem("Curve...");
+            curveItem.Checked = fanCurves.HasCurve(node.Sensor);
+            curveItem.Click += delegate(object obj, EventArgs args) {
+              ShowFanCurveForm(node.Sensor);
+            };
+            controlItem.DropDownItems.Add(new ToolStripSeparator());
+            controlItem.DropDownItems.Add(curveItem);
             treeContextMenu.Items.Add(controlItem);
           }
 
@@ -938,6 +958,20 @@ namespace OpenHardwareMonitor.GUI {
 
     private void hideShowClick(object sender, EventArgs e) {
       SysTrayHideShow();
+    }
+
+    private void ShowFanCurveForm(ISensor controlSensor) {
+      using (FanCurveForm form = new FanCurveForm(computer, controlSensor,
+        fanCurves.GetCurve(controlSensor))) {
+        if (form.ShowDialog(this) != DialogResult.OK)
+          return;
+        if (form.Curve != null) {
+          fanCurves.SetCurve(controlSensor, form.Curve);
+        } else if (fanCurves.HasCurve(controlSensor)) {
+          fanCurves.RemoveCurve(controlSensor);
+          controlSensor.Control?.SetDefault();
+        }
+      }
     }
 
     private void ShowParameterForm(ISensor sensor) {

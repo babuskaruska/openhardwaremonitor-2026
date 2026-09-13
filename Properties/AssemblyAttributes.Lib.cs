@@ -9,6 +9,7 @@
 */
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 // Assembly identity (title, version, product, copyright) is generated from
@@ -22,3 +23,6 @@ using System.Runtime.InteropServices;
 
 [assembly: CLSCompliant(true)]
 [assembly: ComVisible(false)]
+
+// Lets the unit tests exercise parsing code (SMBIOS, RAM naming) directly.
+[assembly: InternalsVisibleTo("OpenHardwareMonitor.Tests")]

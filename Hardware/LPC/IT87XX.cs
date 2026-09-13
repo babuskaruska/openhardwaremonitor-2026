@@ -102,7 +102,7 @@ namespace OpenHardwareMonitor.Hardware.LPC {
         if (chip == Chip.IT8721F || 
             chip == Chip.IT8665E ||
             chip == Chip.IT8686E ||
-            chip == Chip.IT8688E ||
+            chip == Chip.IT8688E || chip == Chip.IT8689E ||
             chip == Chip.IT879XE) 
         {
           initialFanPwmControlExt[index] =
@@ -127,7 +127,7 @@ namespace OpenHardwareMonitor.Hardware.LPC {
         if (chip == Chip.IT8721F ||
             chip == Chip.IT8665E ||
             chip == Chip.IT8686E ||
-            chip == Chip.IT8688E ||
+            chip == Chip.IT8688E || chip == Chip.IT8689E ||
             chip == Chip.IT879XE) 
         {
           WriteByte(FAN_PWM_CTRL_EXT_REG[index], initialFanPwmControlExt[index]);
@@ -156,7 +156,7 @@ namespace OpenHardwareMonitor.Hardware.LPC {
         if (chip == Chip.IT8721F ||
             chip == Chip.IT8665E ||
             chip == Chip.IT8686E ||
-            chip == Chip.IT8688E ||
+            chip == Chip.IT8688E || chip == Chip.IT8689E ||
             chip == Chip.IT879XE) 
         { 
           WriteByte(FAN_PWM_CTRL_REG[index],
@@ -204,7 +204,8 @@ namespace OpenHardwareMonitor.Hardware.LPC {
       switch (chip) {        
         case Chip.IT8665E:
         case Chip.IT8686E:
-        case Chip.IT8688E:        
+        case Chip.IT8688E:
+        case Chip.IT8689E:        
           voltages = new float?[9];
           temperatures = new float?[6];
           fans = new float?[5];
@@ -241,6 +242,7 @@ namespace OpenHardwareMonitor.Hardware.LPC {
         case Chip.IT8628E:
         case Chip.IT8686E:
         case Chip.IT8688E:
+        case Chip.IT8689E:
         case Chip.IT8721F:
         case Chip.IT8728F:
         case Chip.IT8771E:
@@ -425,7 +427,7 @@ namespace OpenHardwareMonitor.Hardware.LPC {
           if (chip == Chip.IT8721F ||
               chip == Chip.IT8665E ||
               chip == Chip.IT8686E ||
-              chip == Chip.IT8688E ||
+              chip == Chip.IT8688E || chip == Chip.IT8689E ||
               chip == Chip.IT879XE)
           {
             value = ReadByte(FAN_PWM_CTRL_EXT_REG[i], out valid);

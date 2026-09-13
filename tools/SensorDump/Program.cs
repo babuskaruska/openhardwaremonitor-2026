@@ -145,8 +145,14 @@ namespace OpenHardwareMonitor.Tools.SensorDump {
           Console.WriteLine(pad + "  [" + sensor.SensorType + "]");
           lastType = sensor.SensorType;
         }
+        string controllable = sensor.Control != null
+          ? string.Format(CultureInfo.InvariantCulture,
+            "  [controllable {0:0}-{1:0}%, mode {2}]",
+            sensor.Control.MinSoftwareValue, sensor.Control.MaxSoftwareValue,
+            sensor.Control.ControlMode)
+          : "";
         Console.WriteLine(pad + "    " + sensor.Name.PadRight(30) +
-          Format(sensor));
+          Format(sensor) + controllable);
       }
 
       foreach (IHardware sub in hardware.SubHardware)

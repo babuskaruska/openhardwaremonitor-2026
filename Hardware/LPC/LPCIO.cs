@@ -260,6 +260,16 @@ namespace OpenHardwareMonitor.Hardware.LPC {
               logicalDeviceNumber = WINBOND_NUVOTON_HARDWARE_MONITOR_LDN;
               break;
           } break;
+        case 0xD8:
+          // UNTESTED. NCT6799D, found on Z790, Z890, X670E and X870E boards.
+          // Register-compatible with the NCT6798D; as in the Linux nct6775 driver,
+          // the low four revision bits are ignored.
+          switch (revision & 0xF0) {
+            case 0x00:
+              chip = Chip.NCT6799D;
+              logicalDeviceNumber = WINBOND_NUVOTON_HARDWARE_MONITOR_LDN;
+              break;
+          } break;
       }
       if (chip == Chip.Unknown) {
         if (id != 0 && id != 0xff) {
@@ -287,7 +297,8 @@ namespace OpenHardwareMonitor.Hardware.LPC {
           chip == Chip.NCT6796D ||
           chip == Chip.NCT6796DR ||
           chip == Chip.NCT6797D ||
-          chip == Chip.NCT6798D)) 
+          chip == Chip.NCT6798D ||
+          chip == Chip.NCT6799D)) 
         {
           port.NuvotonDisableIOSpaceLock();
         }
@@ -346,6 +357,7 @@ namespace OpenHardwareMonitor.Hardware.LPC {
           case Chip.NCT6796DR:
           case Chip.NCT6797D:
           case Chip.NCT6798D:
+          case Chip.NCT6799D:
             superIOs.Add(new NCT677X(chip, revision, address, port));
             break;
           case Chip.F71858:
@@ -407,6 +419,7 @@ namespace OpenHardwareMonitor.Hardware.LPC {
         case 0x8665: chip = Chip.IT8665E; break;
         case 0x8686: chip = Chip.IT8686E; break;
         case 0x8688: chip = Chip.IT8688E; break;
+        case 0x8689: chip = Chip.IT8689E; break; // UNTESTED
         case 0x8705: chip = Chip.IT8705F; break;
         case 0x8712: chip = Chip.IT8712F; break;
         case 0x8716: chip = Chip.IT8716F; break;

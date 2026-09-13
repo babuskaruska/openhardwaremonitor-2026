@@ -285,6 +285,7 @@ namespace OpenHardwareMonitor.Hardware.LPC {
         case Chip.NCT6796DR:
         case Chip.NCT6797D:
         case Chip.NCT6798D:
+        case Chip.NCT6799D:
           switch (chip) {
             case Chip.NCT6791D:
             case Chip.NCT6792D:
@@ -298,6 +299,7 @@ namespace OpenHardwareMonitor.Hardware.LPC {
             case Chip.NCT6796DR:
             case Chip.NCT6797D:
             case Chip.NCT6798D:
+            case Chip.NCT6799D:
               fans = new float?[7];
               controls = new float?[7];
               break;
@@ -453,7 +455,8 @@ namespace OpenHardwareMonitor.Hardware.LPC {
           chip != Chip.NCT6796D &&
           chip != Chip.NCT6796DR &&
           chip != Chip.NCT6797D &&
-          chip != Chip.NCT6798D)
+          chip != Chip.NCT6798D &&
+          chip != Chip.NCT6799D)
         return;
 
       // the lock is disabled already if the vendor ID can be read
