@@ -42,7 +42,9 @@ unless you install PawnIO (see below). CI fails the build if a `.sys`, `.inf` or
 Base tier needs no driver. The CPU, NVIDIA, NVMe and memory sensors listed
 above are also read without administrator rights. Like the original, the
 application still asks for administrator permission when it starts, because
-SATA SMART data, Deep tier and listening for remote web connections need it.
+SATA SMART data, Deep tier, listening for remote web connections and changing
+fan speeds need it. The NVIDIA driver rejects fan changes from programs
+running without administrator rights.
 
 To enable Deep tier, install PawnIO, a signed driver that is not on the
 blocklist and is used by LibreHardwareMonitor, FanControl and OpenRGB, then
@@ -178,11 +180,10 @@ driver installed:
 | 8 P-cores + 12 E-cores grouped and labelled; per-core load and clocks | ✅ verified |
 | NVMe health on two drives | ✅ verified |
 | RTX 3070 temperature, load, clocks, memory, power, fan speed | ✅ verified |
-| RTX 3070 fan control detected (30–100 %) | ✅ verified (read-only) |
 | Memory module names and details from SMBIOS | ✅ verified |
 | Dark theme; web dashboard; localhost-only binding; JSON escaping | ✅ verified |
 | Fan curve engine (interpolation, hysteresis, parsing) | ✅ unit tests |
-| Writing GPU fan speeds | ⚠️ not yet tested on hardware |
+| RTX 3070 fan control: Manual 65 % (0 → 1446 RPM), 40 % (→ 402 RPM), back to automatic | ✅ verified (requires administrator) |
 | Deep tier with PawnIO (CPU temperatures, Super I/O, motherboard fans) | ⚠️ not yet tested |
 | Remote web access with token; Run On Windows Startup | ⚠️ not yet tested |
 | AMD CPUs and GPUs, Intel Arc, NCT6799D, IT8689E, ARM64 | ⚠️ written from documentation, untested |

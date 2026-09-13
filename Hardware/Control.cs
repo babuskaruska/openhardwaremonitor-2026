@@ -106,8 +106,17 @@ namespace OpenHardwareMonitor.Hardware {
     }
 
     public void SetSoftware(float value) {
-      ControlMode = ControlMode.Software;
-      SoftwareValue = value;
+      if (mode != ControlMode.Software) {
+        // Store the value before switching mode. The mode change applies
+        // SoftwareValue, so switching first briefly commanded the previous
+        // value - initially 0, which could stop a fan for a moment.
+        softwareValue = value;
+        this.settings.SetValue(new Identifier(identifier, "value").ToString(),
+          value.ToString(CultureInfo.InvariantCulture));
+        ControlMode = ControlMode.Software;
+      } else {
+        SoftwareValue = value;
+      }
     }
 
     internal event ControlEventHandler ControlModeChanged;
