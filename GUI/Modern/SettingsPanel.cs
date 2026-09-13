@@ -193,6 +193,18 @@ namespace OpenHardwareMonitor.GUI.Modern {
       row.DescriptionProvider = text;
     }
 
+    /// <summary>
+    /// Shows the row added last only while <paramref name="visible"/> returns
+    /// true, for actions that apply only sometimes (such as downloading an
+    /// available update). Re-evaluated whenever the values are refreshed.
+    /// </summary>
+    public void ShowLastRowWhen(Func<bool> visible) {
+      if (rows.Count == 0)
+        throw new InvalidOperationException("Add a row first.");
+      rows[rows.Count - 1].ShownProvider = visible;
+      RefreshValues();
+    }
+
     private SettingRow AddRow(string title, string? description, ModernControl? editor,
       Action? refresh) {
       SettingRow row = new SettingRow(title, description, editor, refresh) { Theme = theme };
@@ -224,7 +236,8 @@ namespace OpenHardwareMonitor.GUI.Modern {
           Flags | TextFormatFlags.WordBreak).Height;
       y += S(10);
       foreach (SettingRow row in rows)
-        y += row.MeasureHeight((int)(width - 2 * pad));
+        if (row.IsShown)
+          y += row.MeasureHeight((int)(width - 2 * pad));
       return (int)Math.Ceiling(y + pad - S(4));
     }
 
@@ -240,6 +253,8 @@ namespace OpenHardwareMonitor.GUI.Modern {
       y += S(10);
       int rowWidth = (int)(Width - 2 * pad);
       foreach (SettingRow row in rows) {
+        if (!row.IsShown)
+          continue;
         int height = row.MeasureHeight(rowWidth);
         row.Bounds = new Rectangle((int)pad, (int)y, rowWidth, height);
         y += height;
@@ -333,7 +348,21 @@ namespace OpenHardwareMonitor.GUI.Modern {
       }
     }
 
+    /// <summary>Decides <see cref="IsShown"/>; see SettingsSection.ShowLastRowWhen.</summary>
+    public Func<bool>? ShownProvider { get; set; }
+
+    /// <summary>Whether the section lays the row out. Unlike Visible, it does not depend on the parent.</summary>
+    public bool IsShown { get; private set; } = true;
+
     public void RefreshValues() {
+      if (ShownProvider != null) {
+        bool shown = ShownProvider();
+        if (shown != IsShown) {
+          IsShown = shown;
+          Visible = shown;
+          Parent?.PerformLayout();
+        }
+      }
       refresh?.Invoke();
       if (DescriptionProvider != null) {
         string text = DescriptionProvider();

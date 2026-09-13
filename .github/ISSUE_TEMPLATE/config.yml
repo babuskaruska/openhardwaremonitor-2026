@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Setup, PawnIO and known limitations
+    url: https://github.com/babuskaruska/openhardwaremonitor-2026#readme
+    about: Many questions about missing temperatures and fan control are answered in the README.
+  - name: Releases
+    url: https://github.com/babuskaruska/openhardwaremonitor-2026/releases
+    about: Check whether a newer version already fixes the problem.

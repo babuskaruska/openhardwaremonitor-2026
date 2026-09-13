@@ -144,10 +144,16 @@ namespace OpenHardwareMonitor.Hardware {
               entry.FailedSafe = true;
               entry.DrivenControl = null;
               entry.State.Reset();
+              Maintenance.ApplicationLog.Warning("Fan curve fail-safe: " + pair.Key +
+                " returned to automatic control because " +
+                entry.Curve.SourceSensorIdentifier + " stopped reporting.");
             }
             continue;
           }
 
+          if (entry.FailedSafe)
+            Maintenance.ApplicationLog.Info("Fan curve resumed: " + pair.Key +
+              " follows " + entry.Curve.SourceSensorIdentifier + " again.");
           entry.MissingTicks = 0;
           entry.FailedSafe = false;
 

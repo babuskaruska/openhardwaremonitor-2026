@@ -1,0 +1,75 @@
+name: Bug report
+description: Something in Open Hardware Monitor does not work as it should.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. In Open Hardware Monitor, **Settings › Diagnostics and about › Report a problem** (or **⋯ › Report a problem**) fills in the first fields and exports a diagnostics report to attach.
+
+        The diagnostics report lists your hardware and sensor readings. Please look it over before you post it.
+
+  # The ids version, windows and access are filled in from the application
+  # (Hardware/Maintenance/IssueLink.cs). Keep them in step.
+  - type: input
+    id: version
+    attributes:
+      label: Open Hardware Monitor version
+      description: Shown in Settings › Diagnostics and about › About.
+      placeholder: "0.10.0"
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Press Win+R, run winver, and copy the version and build.
+      placeholder: "Windows 11 Pro 24H2 (build 26100.4061)"
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware
+      description: The parts involved, such as the processor, motherboard, graphics card or fan controller.
+      placeholder: "Intel Core i7-14700KF, Gigabyte B760M GAMING PLUS WIFI DDR4, NVIDIA GeForce RTX 3070"
+
+  - type: input
+    id: access
+    attributes:
+      label: Access tier
+      description: Shown in Settings › Hardware access. Deep means PawnIO is active. Please also say whether the app runs as administrator.
+      placeholder: "Deep (PawnIO), administrator"
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: If you can make it happen again, how?
+      placeholder: |
+        1. Open the Fans page.
+        2. Set the CPU fan to a curve.
+        3. ...
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics export
+      description: Drag in the .md file from Report a problem or Export for AI, or paste its contents.
+
+  - type: textarea
+    id: crash-report
+    attributes:
+      label: Crash report
+      description: If the app crashed, drag in the newest crash-*.txt file from %LOCALAPPDATA%\OpenHardwareMonitor\Crashes. The application log, %LOCALAPPDATA%\OpenHardwareMonitor\Logs\app.log, can help as well.

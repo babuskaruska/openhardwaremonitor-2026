@@ -75,6 +75,7 @@ namespace OpenHardwareMonitor.GUI {
         Theme = uiTheme,
         Visible = false
       };
+      InitializeMaintenance();
       BuildSettings(settingsPage);
 
       SuspendLayout();
@@ -124,6 +125,7 @@ namespace OpenHardwareMonitor.GUI {
 
     private void ShowMoreMenu(Point screenLocation) {
       ContextMenuStrip menu = new ContextMenuStrip();
+      AddUpdateMenuItem(menu);
       menu.Items.Add(new ToolStripMenuItem("Save technical report…", null,
         delegate { saveReportMenuItem_Click(this, EventArgs.Empty); }));
       menu.Items.Add(new ToolStripMenuItem("Reset minimum and maximum values", null,
@@ -138,6 +140,7 @@ namespace OpenHardwareMonitor.GUI {
       menu.Items.Add(new ToolStripSeparator());
       menu.Items.Add(new ToolStripMenuItem("Rescan hardware", null,
         delegate { resetClick(this, EventArgs.Empty); }));
+      menu.Items.Add(CreateReportProblemMenuItem());
       menu.Items.Add(new ToolStripMenuItem("About Open Hardware Monitor", null,
         delegate { aboutMenuItem_Click(this, EventArgs.Empty); }));
       menu.Items.Add(new ToolStripMenuItem("Exit", null, delegate { Close(); }));
@@ -317,10 +320,15 @@ namespace OpenHardwareMonitor.GUI {
         "OpenHardwareMonitor", "PawnIOModules");
       access.AddButton("PawnIO modules", modules, "Open folder", () => OpenFolder(modules));
 
+      BuildUpdateSettings(page);
+
       SettingsSection about = page.AddSection("Diagnostics and about");
       about.AddButton("Export for AI",
         "Saves every sensor with automatic findings, ready to paste into an AI assistant.",
         "Export", () => exportDiagnosticsMenuItem_Click(this, EventArgs.Empty), ButtonKind.Primary);
+      about.AddButton("Report a problem",
+        "Exports the diagnostics and opens a new bug report on GitHub. Nothing is sent until you submit it.",
+        "Report", ReportProblem);
       about.AddButton("Technical report", "A detailed text report of all detected hardware.",
         "Save", () => saveReportMenuItem_Click(this, EventArgs.Empty));
       about.AddButton("About", "Version " + Application.ProductVersion, "Show",
