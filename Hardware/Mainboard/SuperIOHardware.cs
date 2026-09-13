@@ -845,6 +845,40 @@ namespace OpenHardwareMonitor.Hardware.Mainboard {
               f.Add(new Fan("System Fan #2", 2));
               f.Add(new Fan("System Fan #3", 3));
               break;
+            case Model.B760M_GAMING_PLUS_WIFI_DDR4: // IT8689E
+              // Channel assignment follows LibreHardwareMonitor's mapping of
+              // Gigabyte's Intel 600/700-series IT8689E boards (B660 DS3H
+              // DDR4, Z790 UD; SuperIOHardware.cs, MPL-2.0). The dividers
+              // were checked against a register dump from this board at idle:
+              // +3.3V 3.36 V, +12V 11.95 V, +5V 5.13 V, VCCIN_AUX 1.84 V,
+              // DDR4 1.33 V, 3VSB 3.34 V, VBAT 3.05 V. The firmware leaves
+              // tachometers 5-6 and PWM 6 disabled, so only four headers are
+              // exposed.
+              v.Add(new Voltage("CPU VCore", 0));
+              v.Add(new Voltage("+3.3V", 1, 6.49f, 10));
+              v.Add(new Voltage("+12V", 2, 5f, 1));
+              v.Add(new Voltage("+5V", 3, 1.5f, 1));
+              v.Add(new Voltage("iGPU VAXG", 4));
+              v.Add(new Voltage("CPU VCCIN_AUX", 5));
+              v.Add(new Voltage("DRAM", 6));
+              v.Add(new Voltage("Standby +3.3V", 7, 10, 10));
+              v.Add(new Voltage("VBat", 8, 10, 10));
+              v.Add(new Voltage("AVCC3", 9, 10, 10, 0, true));
+              t.Add(new Temperature("System 1", 0));
+              t.Add(new Temperature("PCH", 1));
+              t.Add(new Temperature("CPU", 2));
+              t.Add(new Temperature("PCIEX16", 3));
+              t.Add(new Temperature("VRM MOS", 4));
+              t.Add(new Temperature("System 2", 5));
+              f.Add(new Fan("CPU Fan", 0));
+              f.Add(new Fan("System Fan #1", 1));
+              f.Add(new Fan("System Fan #2", 2));
+              f.Add(new Fan("System Fan #3 / Pump", 3));
+              c.Add(new Ctrl("CPU Fan", 0));
+              c.Add(new Ctrl("System Fan #1", 1));
+              c.Add(new Ctrl("System Fan #2", 2));
+              c.Add(new Ctrl("System Fan #3 / Pump", 3));
+              break;
             case Model.Z68A_D3H_B3: // IT8728F
               v.Add(new Voltage("VTT", 0));
               v.Add(new Voltage("+3.3V", 1, 6.49f, 10));
@@ -900,6 +934,10 @@ namespace OpenHardwareMonitor.Hardware.Mainboard {
               f.Add(new Fan("System Fan #3", 4));
               break;
             default:
+              if (superIO.Chip == Chip.IT8689E) {
+                GetGigabyteIT8689EDefaultConfiguration(superIO, v, t, f, c);
+                break;
+              }
               v.Add(new Voltage("Voltage #1", 0, true));
               v.Add(new Voltage("Voltage #2", 1, true));
               v.Add(new Voltage("Voltage #3", 2, true));
@@ -970,6 +1008,46 @@ namespace OpenHardwareMonitor.Hardware.Mainboard {
             c.Add(new Ctrl("Fan Control #" + (i + 1), i));
           break;
       }
+    }
+
+    // Fallback for Gigabyte IT8689E boards without their own entry. Channels
+    // wired the same way on every Gigabyte IT8689E board that
+    // LibreHardwareMonitor maps (B560M, B650, B660, Z690, Z790, X670E;
+    // SuperIOHardware.cs, MPL-2.0) get names and dividers. Channels that
+    // differ between those boards keep numbered names. VIN6 (DDR4 VDD read
+    // directly on some boards, DDR5 5 V behind a 1.5:1 divider on others)
+    // and AVCC3 are hidden.
+    private static void GetGigabyteIT8689EDefaultConfiguration(
+      ISuperIO superIO, IList<Voltage> v, IList<Temperature> t, IList<Fan> f,
+      IList<Ctrl> c)
+    {
+      v.Add(new Voltage("CPU VCore", 0));
+      v.Add(new Voltage("+3.3V", 1, 6.49f, 10));
+      v.Add(new Voltage("+12V", 2, 5f, 1));
+      v.Add(new Voltage("+5V", 3, 1.5f, 1));
+      v.Add(new Voltage("Voltage #5", 4));
+      v.Add(new Voltage("Voltage #6", 5));
+      v.Add(new Voltage("Voltage #7", 6, true));
+      v.Add(new Voltage("Standby +3.3V", 7, 10, 10));
+      v.Add(new Voltage("VBat", 8, 10, 10));
+      v.Add(new Voltage("AVCC3", 9, 10, 10, 0, true));
+      t.Add(new Temperature("System 1", 0));
+      t.Add(new Temperature("PCH", 1));
+      t.Add(new Temperature("CPU", 2));
+      t.Add(new Temperature("PCIEX16", 3));
+      t.Add(new Temperature("VRM MOS", 4));
+      for (int i = 5; i < superIO.Temperatures.Length; i++)
+        t.Add(new Temperature("Temperature #" + (i + 1), i));
+      f.Add(new Fan("CPU Fan", 0));
+      f.Add(new Fan("System Fan #1", 1));
+      f.Add(new Fan("System Fan #2", 2));
+      for (int i = 3; i < superIO.Fans.Length; i++)
+        f.Add(new Fan("Fan #" + (i + 1), i));
+      c.Add(new Ctrl("CPU Fan", 0));
+      c.Add(new Ctrl("System Fan #1", 1));
+      c.Add(new Ctrl("System Fan #2", 2));
+      for (int i = 3; i < superIO.Controls.Length; i++)
+        c.Add(new Ctrl("Fan Control #" + (i + 1), i));
     }
 
     private static void GetITEConfigurationsC(ISuperIO superIO,

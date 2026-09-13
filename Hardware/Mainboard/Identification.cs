@@ -165,7 +165,8 @@ namespace OpenHardwareMonitor.Hardware.Mainboard {
     }
 
     public static Model GetModel(string name) {
-      switch (name) {
+      // SMBIOS strings are sometimes padded with trailing spaces.
+      switch (name?.Trim()) {
         case "880GMH/USB3":
           return Model._880GMH_USB3;
         case "ASRock AOD790GX/128M":
@@ -288,6 +289,8 @@ namespace OpenHardwareMonitor.Hardware.Mainboard {
           return Model.Z390_AORUS_ULTRA;
         case "Z390 UD":
           return Model.Z390_UD;
+        case "B760M GAMING PLUS WIFI DDR4":
+          return Model.B760M_GAMING_PLUS_WIFI_DDR4;
         case "FH67":
           return Model.FH67;
         case "Base Board Product Name":
