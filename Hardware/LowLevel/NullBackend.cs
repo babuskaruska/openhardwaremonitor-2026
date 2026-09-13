@@ -86,7 +86,7 @@ namespace OpenHardwareMonitor.Hardware.LowLevel {
         "No low-level backend is active." + System.Environment.NewLine +
         "Processor temperatures, package power and motherboard sensors are " +
         "unavailable." + System.Environment.NewLine +
-        "Install PawnIO to enable them: winget install -e --id namazso.PawnIO" +
+        "Set up PawnIO in Settings › Hardware access, or run: winget install -e --id namazso.PawnIO" +
         System.Environment.NewLine;
     }
 

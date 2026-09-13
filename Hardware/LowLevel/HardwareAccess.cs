@@ -97,9 +97,9 @@ namespace OpenHardwareMonitor.Hardware {
             "sensors are unavailable. " + error;
 
         return "Processor core temperatures, package power and motherboard " +
-          "fan and voltage sensors require a low-level driver. Install " +
-          "PawnIO to enable them (" + InstallCommand + "). Everything else " +
-          "is available without it.";
+          "fan and voltage sensors need the PawnIO driver. To set it up, open " +
+          "Settings › Hardware access and choose Set up, or run " +
+          InstallCommand + ". Everything else is available without it.";
       }
     }
 
