@@ -77,6 +77,16 @@ namespace OpenHardwareMonitor {
     }
 
     public void Save(string fileName) {
+      // Sensor history is also saved periodically from a background thread;
+      // one save at a time keeps two writers from racing over the file and its
+      // backup, and an older snapshot from landing after a newer one.
+      lock (fileSync)
+        SaveUnderFileLock(fileName);
+    }
+
+    private readonly object fileSync = new object();
+
+    private void SaveUnderFileLock(string fileName) {
       // Copy under the lock, write the file outside it, so a slow disk never
       // holds up a reader on another thread.
       List<KeyValuePair<string, string>> snapshot;

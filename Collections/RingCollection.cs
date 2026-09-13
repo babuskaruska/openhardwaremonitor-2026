@@ -13,7 +13,9 @@ using System.Collections;
 using System.Collections.Generic;
 
 namespace OpenHardwareMonitor.Collections {
-  public class RingCollection<T> : IEnumerable<T> {
+  // IReadOnlyList lets readers such as the history chart binary-search by
+  // index instead of enumerating a whole day of samples.
+  public class RingCollection<T> : IReadOnlyList<T> {
 
     private T[] array;
 
@@ -95,6 +97,20 @@ namespace OpenHardwareMonitor.Collections {
       size--;
 
       return result;
+    }
+
+    /// <summary>Copies the items, oldest first, in at most two block copies.</summary>
+    public void CopyTo(T[] destination, int index) {
+      if (destination == null)
+        throw new ArgumentNullException("destination");
+      if (index < 0 || destination.Length - index < size)
+        throw new ArgumentOutOfRangeException("index");
+      if (size == 0)
+        return;
+      int firstPart = Math.Min(size, array.Length - head);
+      Array.Copy(array, head, destination, index, firstPart);
+      if (firstPart < size)
+        Array.Copy(array, 0, destination, index + firstPart, size - firstPart);
     }
 
     public int Count {

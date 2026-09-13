@@ -419,6 +419,7 @@ namespace OpenHardwareMonitor.GUI {
       }
 
       InitializePages();
+      InitializeHistory();
 
       // Create a handle, otherwise calling Close() does not fire FormClosed     
       IntPtr handle = Handle;
@@ -798,6 +799,9 @@ namespace OpenHardwareMonitor.GUI {
         SensorNode node = info.Node.Tag as SensorNode;
         if (node != null && node.Sensor != null) {
           treeContextMenu.Items.Clear();
+          treeContextMenu.Items.Add(new ToolStripMenuItem("Show history", null,
+            delegate { ShowHistory(node.Sensor); }));
+          treeContextMenu.Items.Add(new ToolStripSeparator());
           if (node.Sensor.Parameters.Length > 0) {
             ToolStripMenuItem item = new ToolStripMenuItem("Parameters...");
             item.Click += delegate(object obj, EventArgs args) {
@@ -1007,11 +1011,10 @@ namespace OpenHardwareMonitor.GUI {
 
     private void treeView_NodeMouseDoubleClick(object sender, 
       TreeNodeAdvMouseEventArgs e) {
+      // Parameters remain in the context menu.
       SensorNode node = e.Node.Tag as SensorNode;
-      if (node != null && node.Sensor != null && 
-        node.Sensor.Parameters.Length > 0) {
-        ShowParameterForm(node.Sensor);
-      }
+      if (node != null && node.Sensor != null)
+        ShowHistory(node.Sensor);
     }
 
     private void celsiusMenuItem_Click(object sender, EventArgs e) {

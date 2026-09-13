@@ -17,6 +17,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.Windows.Forms;
+using OpenHardwareMonitor.Hardware;
 
 namespace OpenHardwareMonitor.GUI.Modern {
 
@@ -63,6 +64,10 @@ namespace OpenHardwareMonitor.GUI.Modern {
     /// <summary>Oldest to newest; null hides the trend.</summary>
     public float[]? Trend { get; set; }
     public string TrendLabel { get; set; } = "";
+
+    /// <summary>The sensor behind the trend; clicking the trend opens its history.</summary>
+    public ISensor? TrendSensor { get; set; }
+
     public string? Note { get; set; }
 
     internal bool HasHero {
@@ -85,6 +90,7 @@ namespace OpenHardwareMonitor.GUI.Modern {
 
     private const string MoreInfoText = "More info";
     private const string MoreInfoArrow = "›";
+    private const string OpenHistoryText = "Open history ›";
     private const float EntranceSeconds = 0.65f;
 
     private const TextFormatFlags Flags = TextFormatFlags.NoPadding |
@@ -114,6 +120,11 @@ namespace OpenHardwareMonitor.GUI.Modern {
     // Regions in control coordinates, recorded by the last full render, so an
     // animated value can repaint just the pixels it affects.
     private RectangleF heroRegion, trendRegion;
+
+    // The trend and its label, which open the history when clicked.
+    private RectangleF trendHitRegion;
+    private bool trendHover;
+    private Point pointerDownAt;
     private readonly List<RectangleF> metricBarRegions = new List<RectangleF>();
     private readonly List<RectangleF> rowBarRegions = new List<RectangleF>();
 
@@ -162,6 +173,17 @@ namespace OpenHardwareMonitor.GUI.Modern {
     }
 
     public event EventHandler? MoreInfoClicked;
+
+    /// <summary>
+    /// The trend was clicked on a card whose model has a
+    /// <see cref="CardModel.TrendSensor"/>. Clicks elsewhere raise
+    /// <see cref="MoreInfoClicked"/>.
+    /// </summary>
+    public event EventHandler? TrendClicked;
+
+    private bool TrendClickable {
+      get { return TrendClicked != null && model.TrendSensor != null && !trendHitRegion.IsEmpty; }
+    }
 
     public CardModel Model {
       get { return model; }
@@ -554,6 +576,10 @@ namespace OpenHardwareMonitor.GUI.Modern {
           trendRegion = trendWidth > 0
             ? ToControl(RectangleF.Inflate(area, S(14), S(14)))
             : RectangleF.Empty;
+          trendHitRegion = trendWidth > 0
+            ? ToControl(RectangleF.FromLTRB(area.Left - S(8), area.Top - S(8),
+              area.Right + S(8), y + heroHeight + S(2)))
+            : RectangleF.Empty;
         }
 
         float mix = severityMix.Value;
@@ -574,20 +600,23 @@ namespace OpenHardwareMonitor.GUI.Modern {
             theme.TextSecondary, Flags | TextFormatFlags.EndEllipsis);
         }
 
-        if (drawing && trendWidth > 0 && Dirty(RectangleF.Inflate(area, S(14), S(14)))) {
+        if (drawing && trendWidth > 0 && Dirty(RectangleF.FromLTRB(area.Left - S(14),
+          area.Top - S(14), area.Right + S(14), y + heroHeight + S(2)))) {
           Color trendColor = ColorMath.Lerp(TrendColor(previousSeverity),
             TrendColor(model.HeroSeverity), mix);
           DrawTrend(g!, area, model.Trend!, trendColor, MinimumTrendRange(),
             trendReveal.Value);
-          TextRenderer.DrawText(g!, model.TrendLabel, labelFont,
+          bool opens = trendHover && TrendClickable;
+          TextRenderer.DrawText(g!, opens ? OpenHistoryText : model.TrendLabel, labelFont,
             new Rectangle((int)area.Left, (int)(y + heroHeight - labelFont.Height),
               (int)area.Width, labelFont.Height),
-            theme.TextTertiary, Flags | TextFormatFlags.Right);
+            opens ? theme.Accent : theme.TextTertiary, Flags | TextFormatFlags.Right);
         }
         y += heroHeight;
       } else if (drawing) {
         heroRegion = RectangleF.Empty;
         trendRegion = RectangleF.Empty;
+        trendHitRegion = RectangleF.Empty;
       }
 
       // Secondary readings in a grid.
@@ -798,6 +827,20 @@ namespace OpenHardwareMonitor.GUI.Modern {
       hover.Set(0);
       press.Set(0);
       pointerDown = false;
+      SetTrendHover(false);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e) {
+      base.OnMouseMove(e);
+      SetTrendHover(TrendClickable && trendHitRegion.Contains(e.Location));
+    }
+
+    private void SetTrendHover(bool value) {
+      if (value == trendHover)
+        return;
+      trendHover = value;
+      if (!trendHitRegion.IsEmpty)
+        Invalidate(RegionFor(trendHitRegion));
     }
 
     protected override void OnMouseDown(MouseEventArgs e) {
@@ -805,6 +848,7 @@ namespace OpenHardwareMonitor.GUI.Modern {
       if (e.Button != MouseButtons.Left)
         return;
       pointerDown = true;
+      pointerDownAt = e.Location;
       press.Set(1);
     }
 
@@ -815,7 +859,10 @@ namespace OpenHardwareMonitor.GUI.Modern {
       press.Set(0);
       bool click = pointerDown && ClientRectangle.Contains(e.Location);
       pointerDown = false;
-      if (click)
+      if (click && TrendClickable && trendHitRegion.Contains(e.Location) &&
+        trendHitRegion.Contains(pointerDownAt))
+        TrendClicked?.Invoke(this, EventArgs.Empty);
+      else if (click)
         MoreInfoClicked?.Invoke(this, EventArgs.Empty);
     }
 
