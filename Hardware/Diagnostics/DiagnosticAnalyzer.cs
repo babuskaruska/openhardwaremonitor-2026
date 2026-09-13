@@ -661,6 +661,11 @@ namespace OpenHardwareMonitor.Hardware.Diagnostics {
       foreach (DiagnosticSensor sensor in hardware.Sensors) {
         if (sensor.Type != SensorType.Voltage || !sensor.Value.HasValue)
           continue;
+        // A board configuration hides inputs that are unwired or not scaled
+        // for this board (for example AVCC3 on the IT8689E, which reads a
+        // flat placeholder). Their readings are not supply rails.
+        if (sensor.IsDefaultHidden)
+          continue;
         float value = sensor.Value.Value;
 
         float? nominal = GetNominalRailVoltage(sensor.Name);
@@ -785,8 +790,10 @@ namespace OpenHardwareMonitor.Hardware.Diagnostics {
 
     private static void CheckMissingValues(DiagnosticHardware hardware,
       List<DiagnosticFinding> findings) {
+      // Fan outputs report no value while the hardware controls them
+      // automatically, which is the normal state and not worth a finding.
       List<DiagnosticEvidence> missing = hardware.Sensors
-        .Where(s => !s.Value.HasValue)
+        .Where(s => !s.Value.HasValue && s.Type != SensorType.Control)
         .Select(s => Evidence(s, null, null))
         .ToList();
       if (missing.Count == 0)

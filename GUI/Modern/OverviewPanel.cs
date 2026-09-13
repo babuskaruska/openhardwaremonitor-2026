@@ -603,8 +603,11 @@ namespace OpenHardwareMonitor.GUI.Modern {
         .OrderByDescending(s => s.Value).ToList();
       List<ISensor> fans = sensors
         .Where(s => s.SensorType == SensorType.Fan && HasValue(s)).ToList();
+      // Inputs a board configuration hides are unwired or unscaled: their
+      // readings are not rail voltages and must not raise a warning here.
       List<ISensor> voltages = sensors
-        .Where(s => s.SensorType == SensorType.Voltage && HasValue(s)).ToList();
+        .Where(s => s.SensorType == SensorType.Voltage && HasValue(s) &&
+          !s.IsDefaultHidden).ToList();
 
       if (temperatures.Count == 0 && fans.Count == 0 && voltages.Count == 0) {
         model.Note = AccessNote("Fans, voltages and board temperatures");

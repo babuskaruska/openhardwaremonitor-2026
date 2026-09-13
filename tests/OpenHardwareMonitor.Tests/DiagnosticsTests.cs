@@ -640,6 +640,46 @@ namespace OpenHardwareMonitor.Tests {
     }
 
     [Fact]
+    public void FanControlsInAutomaticModeAreNotListedAsMissing() {
+      // A fan output has no reading while the hardware drives it (automatic
+      // mode), as on the IT8689E. Only the unplugged fan header counts.
+      StubComputer computer = new StubComputer();
+      StubHardware superIo = computer.Add("ITE IT8689E", HardwareType.SuperIO, "lpc", "0");
+      superIo.Add("CPU Fan", SensorType.Control, null);
+      superIo.Add("System Fan #2", SensorType.Control, null);
+      superIo.Add("System Fan #2", SensorType.Fan, null);
+
+      DiagnosticFinding finding = Single(Capture(computer),
+        DiagnosticRules.SensorNoValue, DiagnosticSeverity.Info);
+      DiagnosticEvidence evidence = Assert.Single(finding.Evidence);
+      Assert.Equal(SensorType.Fan, evidence.Type);
+    }
+
+    [Fact]
+    public void OnlyFanControlsWithoutValueRaiseNothing() {
+      StubComputer computer = new StubComputer();
+      computer.Add("ITE IT8689E", HardwareType.SuperIO, "lpc", "0")
+        .Add("CPU Fan", SensorType.Control, null);
+      None(Capture(computer), DiagnosticRules.SensorNoValue);
+    }
+
+    [Fact]
+    public void HiddenVoltageInputIsNotCheckedAsARail() {
+      // Board configurations hide unwired or unscaled inputs, such as AVCC3
+      // on the IT8689E reading a flat placeholder. The same reading on a
+      // visible input is out of tolerance (see RailTolerance).
+      StubComputer computer = new StubComputer();
+      StubSensor avcc = computer.Add("ITE IT8689E", HardwareType.SuperIO, "lpc", "0")
+        .Add("AVCC", SensorType.Voltage, 3.1f);
+      avcc.IsDefaultHidden = true;
+
+      DiagnosticSnapshot snapshot = Capture(computer);
+      None(snapshot, DiagnosticRules.VoltageOutOfRange);
+      None(snapshot, DiagnosticRules.VoltageExcursion);
+      None(snapshot, DiagnosticRules.VoltageImplausible);
+    }
+
+    [Fact]
     public void NaNCountsAsNoValue() {
       StubComputer computer = new StubComputer();
       computer.Add("CPU", HardwareType.CPU, "intelcpu", "0")

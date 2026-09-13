@@ -37,7 +37,7 @@ unless you install PawnIO (see below). CI fails the build if a `.sys`, `.inf` or
 | Tier | Requires | Provides |
 |---|---|---|
 | **Base** (default) | nothing | CPU name, hybrid topology, per-core load and clock speeds; NVIDIA GPU temperature, load, clocks, memory, power, fan speed and fan control; NVMe health (temperature, wear, spare, errors, data written); per-module memory information; memory usage |
-| **Deep** (optional) | [PawnIO](https://pawnio.eu), its signed modules, and administrator rights | Intel CPU core and package temperatures; CPU package and core power. Motherboard Super I/O sensors and AMD CPU temperatures are planned but not yet supported through PawnIO |
+| **Deep** (optional) | [PawnIO](https://pawnio.eu), its signed modules, and administrator rights | Intel CPU core and package temperatures; CPU package and core power; motherboard Super I/O fans, voltages and temperatures. AMD CPU temperatures are not yet supported through PawnIO |
 
 Base tier needs no driver. The CPU, NVIDIA, NVMe and memory sensors listed
 above are also read without administrator rights. Like the original, the
@@ -58,8 +58,8 @@ To enable Deep tier:
 2. Download the signed modules from the
    [PawnIO.Modules releases](https://github.com/namazso/PawnIO.Modules/releases)
    (`release_x_y_z.zip`) and copy the `.bin` files into
-   `%LOCALAPPDATA%\OpenHardwareMonitor\PawnIOModules`. Intel CPUs need
-   `IntelMSR.bin`. The driver checks each module's signature before loading it.
+   `%LOCALAPPDATA%\OpenHardwareMonitor\PawnIOModules`. Intel CPU sensors
+   need `IntelMSR.bin`; motherboard sensors need `LpcIO.bin`. The driver checks each module's signature before loading it.
 3. Start Open Hardware Monitor as administrator. By default PawnIO refuses
    programs without administrator rights.
 
@@ -86,14 +86,29 @@ administrator rights).
   (DDR4/DDR5), speed, rank and voltage per module, including the SMBIOS 3.3
   extended fields. The memory node is named after the kit, for example
   "Corsair 32 GB DDR4-3200".
-- Super I/O: Nuvoton NCT6799D and ITE IT8689E added. **Untested**, and not yet
-  reachable: PawnIO only offers restricted Super I/O access through its LpcIO
-  module, and the Super I/O code still needs an adapter for it.
+- Super I/O through PawnIO:
+  - An adapter maps the Super I/O code onto PawnIO's LpcIO module. It uses
+    one module instance per chip slot and discovers each chip's I/O ranges
+    during detection.
+  - The ITE IT8689E is fully supported (10 voltages, 6 temperatures, 6 fans,
+    6 fan outputs), with a mapping for the Gigabyte B760M GAMING PLUS WIFI
+    DDR4.
+  - Nuvoton NCT6799D was added but is untested.
 
 **Application**
-- Menus ported to current WinForms controls; per-monitor DPI awareness; a
-  **dark theme** (Options → Theme: Follow Windows, Light or Dark; takes effect
-  on the next start).
+- **A new interface.** The window opens on an overview:
+  - one card each for the CPU, GPU, memory, motherboard and storage, showing
+    the readings that matter;
+  - a five-minute trend, and colour cues when something runs warm or hot.
+
+  **More info** (or Ctrl+2) opens the full sensor list, now without grid or
+  tree lines and with vector icons; Esc returns to the overview. Light and
+  dark themes (Options → Theme), crisp at any display scaling. Motion is
+  subtle and follows the Windows animation effects setting:
+  - cards ease in and lift under the pointer;
+  - readings and bars move smoothly to new values;
+  - the two views cross-fade.
+- **Export for AI:** a diagnostics snapshot in one click (see below).
 - **Fan curves:** right-click a controllable fan sensor, then Control →
   Curve… to drive it from any temperature sensor (details below).
 - Settings are stored in `%LOCALAPPDATA%\OpenHardwareMonitor\`, not next to the
@@ -122,6 +137,35 @@ For NVIDIA GPUs, Open Hardware Monitor returns the fans to automatic control on
 exit only if it changed them during that session. That way it does not
 override another utility, such as MSI Afterburner, that is managing the fans.
 
+## Export for AI
+
+**Export for AI** (the button on the overview, the menu bar item, File → Export
+Diagnostics, or the tray menu) saves a diagnostics snapshot in one click. It
+writes two files to `Documents\OpenHardwareMonitor\Diagnostics`:
+`OHM-diagnostics-<date>-<time>.md` and `.json`. The Markdown is copied to the
+clipboard, ready to paste into an AI assistant, and Explorer opens with the
+file selected.
+
+The snapshot contains:
+- Windows version, uptime, how long Open Hardware Monitor has been running,
+  and the sensor access tier.
+- Every sensor with its current value, its minimum and maximum since the app
+  started, and statistics from its history.
+- **Findings**: rule-based checks with a severity and a plain explanation, for
+  example:
+  - CPU temperatures close to TjMax, and hot GPUs or drives;
+  - NVMe wear, low spare capacity and media errors;
+  - voltage rails outside ±5 %, a weak CMOS battery;
+  - fans stopped while hot, full memory or drives;
+  - missing sensor access.
+- The full technical report as an appendix.
+
+Without the GUI:
+
+```bash
+dotnet run --project tools/SensorDump/SensorDump.csproj -c Release -- --export <folder> --seconds 10
+```
+
 ## Web server and JSON API
 
 Options → Web Server → Run starts a local web server with a live dashboard at
@@ -131,6 +175,8 @@ Options → Web Server → Run starts a local web server with a live dashboard a
 |---|---|
 | `GET /api/v1/sensors` | Versioned JSON sensor tree, for Home Assistant, Grafana, Rainmeter and similar |
 | `GET /data.json` | The 0.9.6 format, for existing integrations |
+| `GET /api/v1/diagnostics` | The Export for AI snapshot as JSON |
+| `GET /api/v1/diagnostics.md` | The same snapshot as Markdown |
 
 Security defaults:
 - The server listens on **localhost only**.
@@ -192,13 +238,16 @@ was tested with no driver installed:
 | NVMe health on two drives | ✅ verified |
 | RTX 3070 temperature, load, clocks, memory, power, fan speed | ✅ verified |
 | Memory module names and details from SMBIOS | ✅ verified |
-| Dark theme; web dashboard; localhost-only binding; JSON escaping | ✅ verified |
+| New interface (overview, sensor list, light and dark themes), rendered from the real sensors | ✅ verified |
+| Export for AI through SensorDump, including a real finding (NVMe media errors on a test drive) | ✅ verified |
+| Web dashboard; localhost-only binding; JSON escaping | ✅ verified |
 | Fan curve engine (interpolation, hysteresis, parsing) | ✅ unit tests |
 | RTX 3070 fan control: Manual 65 % (0 → 1446 RPM), 40 % (→ 402 RPM), back to automatic | ✅ verified (requires administrator) |
 | Deep tier with PawnIO 2.2.0 and the IntelMSR module, as administrator: P-cores 32–42 °C, E-cores 33 °C, package 40 °C, TjMax 100 °C read from the CPU, package power 37.9 W | ✅ verified |
-| Motherboard sensors and fan control through PawnIO | ⚠️ not yet supported |
+| Motherboard sensors through PawnIO (ITE IT8689E, Gigabyte B760M GAMING PLUS WIFI DDR4): +12V 11.95 V, +5V 5.13 V, +3.3V 3.36 V, VBat 3.05 V, six temperatures, two fans | ✅ verified |
+| Motherboard fan control (writing fan speeds) | ⚠️ not yet tested on hardware |
 | Remote web access with token; Run On Windows Startup | ⚠️ not yet tested |
-| AMD CPUs and GPUs, Intel Arc, NCT6799D, IT8689E, ARM64 | ⚠️ written from documentation, untested |
+| AMD CPUs and GPUs, Intel Arc, NCT6799D, other Super I/O boards through PawnIO, ARM64 | ⚠️ written from documentation, untested |
 
 Reports from other hardware are welcome. Please include the output of
 `tools/SensorDump`.
