@@ -50,7 +50,12 @@ SATA SMART data, Deep tier, listening for remote web connections and changing
 fan speeds need it. The NVIDIA driver rejects fan changes from programs
 running without administrator rights.
 
-To enable Deep tier:
+The quickest way to enable Deep tier is **Settings › Hardware access › Full
+sensor access › Set up**. It installs PawnIO with winget, downloads the signed
+modules and restarts Open Hardware Monitor as administrator; Windows asks for
+permission along the way.
+
+To enable Deep tier by hand:
 
 1. Install PawnIO, a signed driver that is not on the blocklist and is used by
    LibreHardwareMonitor, FanControl and OpenRGB:
@@ -107,14 +112,16 @@ administrator rights).
     sensors.
   - **Sensors:** the full sensor list, without grid or tree lines and with
     vector icons. Esc returns to the overview.
-  - **Fans:** every controllable fan with its current speed and a choice of
-    **Automatic**, **Fixed speed** (a slider) or **Curve** (see below).
+  - **Fans:** every controllable fan with its speed, a choice of **Automatic**,
+    **Fixed speed** or **Curve** with an inline curve editor, fan detection and
+    calibration, and Silent / Balanced / Performance profiles (see
+    [Fan control](#fan-control)).
   - **Settings:** every option on one page, grouped into General, Appearance,
     Sensors, Logging, Web server, Hardware access, and Diagnostics and about.
 
   The ⋯ button holds the less common actions: technical report, reset
-  minimum and maximum, plot, desktop gadget, hidden sensors, rescan hardware,
-  about and exit. Light and dark themes, crisp at any display scaling. Motion
+  minimum and maximum, sensor history, desktop gadget, hidden sensors, rescan
+  hardware, report a problem, about and exit. Light and dark themes, crisp at any display scaling. Motion
   is subtle, follows the Windows animation effects setting and can be turned
   off under Settings → Appearance:
   - cards ease in and lift under the pointer;
@@ -122,6 +129,13 @@ administrator rights).
   - pages cross-fade.
 - **Fast and light:** sensors are read on a background thread, so the window
   never waits for hardware (see [Performance](#performance)).
+- **Full sensor access in a few clicks** from Settings › Hardware access (see
+  [Access tiers](#access-tiers)).
+- **Alerts** with Windows notifications (see [Alerts](#alerts)).
+- **24-hour sensor history** (see [Sensor history](#sensor-history)).
+- **Ready for long runs:** update notifications, crash reports, an application
+  log and Report a problem (see
+  [Long runs and problem reports](#long-runs-and-problem-reports)).
 - **Export for AI:** a diagnostics snapshot in one click (see below).
 - Settings are stored in `%LOCALAPPDATA%\OpenHardwareMonitor\`, not next to the
   executable. Logs are in `%LOCALAPPDATA%\OpenHardwareMonitor\Logs`
@@ -159,11 +173,45 @@ What made the difference:
   being dragged.
 - The published executable is precompiled (ReadyToRun).
 
-## Fan curves
+## Fan control
 
-On the **Fans** page, choose **Curve** for a fan to drive it from any
-temperature sensor. A curve maps the temperature to a fan duty cycle using
-linear interpolation between the points you enter.
+Everything is on the **Fans** page. Each fan card shows the fan's speed and a
+choice of **Automatic** (the motherboard or graphics driver decides),
+**Fixed speed** or **Curve**.
+
+**Detect and calibrate.** Open Hardware Monitor can find out which speed
+sensor belongs to which fan output and how slowly each motherboard fan can
+turn. It asks first, because fan speeds change for a short time:
+- **Detect speed sensor** drives the output to a clearly different speed and
+  watches which speed sensor follows. Graphics card fans only get this step;
+  their driver decides how slowly they turn.
+- **Detect and calibrate** then steps a motherboard fan down 5 % at a time.
+  If the fan stops, it finds the lowest speed that starts it again. A fan stays
+  stopped for at most about 6 seconds.
+- **Detect and calibrate all** does every fan in turn.
+
+Detection stops at once and hands the fan back to automatic control if you
+choose **Cancel**, if any CPU or GPU temperature passes 80 °C, if a reading goes
+missing, if a stopped fan does not restart, after 4 minutes on one fan, or when
+the application closes. It does not start above 75 °C. Afterwards, curves and
+fixed speeds never go below the speed that keeps the fan turning.
+
+**Curve editor.** Choosing **Curve** opens the editor inside the card. Drag a
+point, double-click to add one, and right-click or press Delete to remove one;
+the arrow keys move the selected point. Any temperature sensor can be the
+source. A marker shows the current temperature and the resulting speed, and a
+shaded band marks speeds too slow to keep the fan turning.
+
+**Profiles.** Silent, Balanced and Performance each hold a setting for every
+fan. Switch profiles at the top of the Fans page or from the tray icon's
+**Fan profile** menu. **Save current settings as…** stores the current fan
+setup in a profile; a profile that was never saved starts from defaults based
+on calibration.
+
+How curves behave:
+
+- **Interpolation:** the duty cycle is interpolated linearly between the
+  points you enter.
 
 - **Hysteresis:** 3 °C by default, so a fan does not hunt up and down around a
   point.
@@ -200,6 +248,7 @@ The snapshot contains:
   - voltage rails outside ±5 %, a weak CMOS battery;
   - fans stopped while hot, full memory or drives;
   - missing sensor access.
+- The recent alert log.
 - The full technical report as an appendix.
 
 Without the GUI:
@@ -207,6 +256,68 @@ Without the GUI:
 ```bash
 dotnet run --project tools/SensorDump/SensorDump.csproj -c Release -- --export <folder> --seconds 10
 ```
+
+## Alerts
+
+**Settings › Alerts** turns alerts and their Windows notifications on or off,
+rule by rule. A condition has to last for the time shown before it alerts.
+After an alert, the same rule stays quiet for 15 minutes unless it becomes
+critical, and it clears only once the reading is back past the limit by a
+margin.
+
+| Rule | Alerts when | Lasting |
+|---|---|---|
+| Processor near its temperature limit | a core comes within 15 °C of its TjMax | 30 s |
+| Graphics card hot | the GPU core reaches 83 °C (critical at 90 °C) | 30 s |
+| Drive hot | a drive reaches 70 °C | 60 s |
+| Fan stopped while hot | a fan that has been turning stops while its hardware is above 60 °C | 30 s |
+| New drive media errors | the error count rises above the last value seen | at once |
+| SSD spare capacity low | the available spare falls below the drive's own warning threshold | at once |
+| Supply voltage out of range | a supply rail is more than 5 % off its nominal voltage | 10 s |
+| CMOS battery low | the battery reads below 2.8 V | 60 s |
+
+Existing media errors do not alert on every start; only new ones do. **Custom
+rules** (Settings › Alerts › Custom rules) watch any sensor above or below a
+value for a chosen time. While an alert is active, the overview's status chip
+shows it; click the chip for the recent alerts. Export for AI includes the last
+100 alerts.
+
+## Sensor history
+
+Every sensor keeps 24 hours of readings. Open a sensor's history by clicking the
+trend line on an overview card, by double-clicking a sensor on the Sensors page
+(or right-click › Show history), or from ⋯ › Sensor history.
+
+The history page shows 10 minutes, 1 hour, 6 hours or 24 hours: the range of
+readings, the average, the lowest and highest values with the times they
+happened, and the exact value under the pointer. **Compare** overlays a second
+sensor of the same kind. Gaps mark times when Open Hardware Monitor was not
+running.
+
+History is saved every 10 minutes as well as on exit, so a crash during a long
+run loses at most the last 10 minutes. A full day for 200 busy sensors takes
+about 6 MB in the settings file.
+
+## Long runs and problem reports
+
+- **Updates:** once a day, Open Hardware Monitor checks GitHub for a newer
+  release and shows a notification. It never downloads or installs anything.
+  Settings › Updates has **Check now**, **Get the new version** (opens the
+  release page) and **Skip this version**.
+- **Crash reports:** an unexpected error is written to
+  `%LOCALAPPDATA%\OpenHardwareMonitor\Crashes` before anything is shown. A dialog
+  then offers to open the report or to report it on GitHub. The newest 20
+  reports are kept.
+- **Application log:** `%LOCALAPPDATA%\OpenHardwareMonitor\Logs\app.log` records
+  starts and stops, the access tier, sensor errors, web server failures and fan
+  fail-safe events. It is capped at 1 MB, with one previous file kept.
+- **Report a problem** (Settings › Diagnostics and about, or ⋯) saves an Export
+  for AI snapshot, copies it to the clipboard, shows it in Explorer and opens a
+  new GitHub issue with the version, Windows version and access tier filled in.
+  Nothing is sent until you submit the issue.
+
+Crash reports, the log and issue links replace your user name, computer name and
+profile folder with placeholders.
 
 ## Web server and JSON API
 
@@ -263,8 +374,10 @@ dotnet run --project tools/SensorDump/SensorDump.csproj -c Release
 ```
 
 GitHub Actions (`.github/workflows/build.yml`) builds, tests and publishes both
-architectures, checks for driver files, and attaches zipped builds with SHA-256
-checksums to releases tagged `v*`.
+architectures, checks for driver files, and attaches the executable and zipped
+builds with SHA-256 checksums to releases tagged `v*`. `packaging/winget` holds
+winget manifests for the portable executable; `update-manifest.ps1` fills in a
+release's download address and checksum before submission.
 
 ## Verification status
 
@@ -292,8 +405,13 @@ was tested with no driver installed:
 | RTX 3070 fan control: Manual 65 % (0 → 1446 RPM), 40 % (→ 402 RPM), back to automatic | ✅ verified (requires administrator) |
 | Deep tier with PawnIO 2.2.0 and the IntelMSR module, as administrator: P-cores 32–42 °C, E-cores 33 °C, package 40 °C, TjMax 100 °C read from the CPU, package power 37.9 W | ✅ verified |
 | Motherboard sensors through PawnIO (ITE IT8689E, Gigabyte B760M GAMING PLUS WIFI DDR4): +12V 11.95 V, +5V 5.13 V, +3.3V 3.36 V, VBat 3.05 V, six temperatures, two fans | ✅ verified |
-| Motherboard fan control (writing fan speeds) | ⚠️ not yet tested on hardware |
-| Changing fan modes on the Fans page (no fan speeds were written while testing the page) | ⚠️ not yet tested on hardware |
+| Motherboard fan control through PawnIO: the ITE IT8689E CPU fan driven from 100 % down to 0 % in 5 % steps (1,378 → 370 RPM) and handed back to automatic | ✅ verified (requires administrator) |
+| Fan detection: RTX 3070 fan paired with its speed sensor (2,621 RPM response); the CPU fan paired and calibrated; Cancel part-way returns the fan to automatic | ✅ verified (requires administrator) |
+| A fan that stops at low speed: stall detection and restart | ⚠️ unit tests only (the CPU fan on the test PC keeps turning at 0 %) |
+| Guided full sensor access setup: status and dialog against the real PawnIO 2.2.0 installation | ✅ verified (the winget install and module download were not run) |
+| Update check against the real GitHub release | ✅ verified |
+| Alert engine: debounce, cooldown, recovery, media-error baseline, custom rules | ✅ unit tests |
+| Windows notifications, the history page, the alert and crash dialogs, Report a problem, fan profiles and the curve editor on screen | ⚠️ not yet tested on screen |
 | Remote web access with token; Run On Windows Startup | ⚠️ not yet tested |
 | AMD CPUs and GPUs, Intel Arc, NCT6799D, other Super I/O boards through PawnIO, ARM64 | ⚠️ written from documentation, untested |
 
